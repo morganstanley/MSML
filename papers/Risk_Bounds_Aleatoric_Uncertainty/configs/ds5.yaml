@@ -1,0 +1,26 @@
+
+mse_variance_fb:
+  loss_type: 'MSE'
+  basis_type: 'b-spline'
+  optimizer_engine: 'cvxpy'
+  method: 'COBYLA'
+  n_degree: 1
+  include_intercept: True
+  x_min: 0.5
+  x_max: 9.5
+  num_knots: 30
+  f_min: 0.000001
+  f_max: 30
+
+nll_variance_fb:
+  basis_type: 'b-spline'
+  loss_type: 'invNLL'
+  optimizer_engine: 'cvxpy'
+  method: 'COBYLA'
+  n_degree: 1
+  include_intercept: True
+  x_min: 0.5
+  x_max: 9.5
+  num_knots: 30
+  f_min: 0.000001
+  f_max: 30
