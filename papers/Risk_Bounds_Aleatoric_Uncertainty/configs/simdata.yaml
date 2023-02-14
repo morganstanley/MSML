@@ -1,0 +1,51 @@
+defaults:
+  train_sizes: [1000, 3000, 5000, 10000, 30000]
+  val_size: 1000
+  test_size: 1000
+  num_of_replicas: 10
+  data_folder: 'data_sim'
+  
+ds1:
+  description: "uniform x, heteroscedastic Gaussian noise, monotonically increasing scale fn"
+  xlow: 0
+  xhigh: 10
+  sigma: 0.3
+  xi_max: null
+  boundary_extend: 0.75
+
+ds2:
+  description: "uniform x, heteroscedastic t noise, true std is generated through an rbf-net on x"
+  xlow: 0
+  xhigh: 10
+  K: 50
+  c_range: [0,10]
+  beta_range: [0.01, 0.02]
+  xi_max: null
+  boundary_extend: 0.75
+  
+ds3:
+  description: "uniform x, heteroscedastic Gaussian noise, true variance is generated through summation of B-spline basis"
+  xlow: 0
+  xhigh: 10
+  n_degrees: [2,3]
+  num_knots: 5
+  xi_max: null
+  boundary_extend: 0.75
+
+ds4:
+  description: "uniform x, heteroscedastic Gaussian noise, true variance is generated through summation of indicator fn basis"
+  xlow: 0
+  xhigh: 10
+  n_degrees: [0]
+  num_knots: 20
+  xi_max: null
+  boundary_extend: 0.75
+
+ds5:
+  description: "uniform x, heteroscedastic t noise, true variance is generated through summation of indicator fn basis"
+  xlow: 0
+  xhigh: 10
+  n_degrees: [0]
+  num_knots: 50
+  xi_max: null
+  boundary_extend: 0.75
