@@ -1,0 +1,108 @@
+seml:
+  executable: synthetic/experiment.py
+  name: tsdiff_syntetic_final
+  output_dir: ../logs
+  project_root_dir: ../
+  conda_environment: place_your_env_here
+
+slurm:
+  experiments_per_job: 2
+  sbatch_options:
+    gres: gpu:1       # num GPUs
+    mem: 16G          # memory
+    cpus-per-task: 2  # num cores
+    time: 0-08:00     # max time, D-HH:MM
+    partition: gpu_all
+
+
+fixed:
+  epochs: 1000
+  learning_rate: 1e-3
+  batch_size: 256
+  predict_gaussian_noise: False
+
+grid:
+  seed:
+    type: range
+    min: 1
+    max: 6
+    step: 1
+
+  dataset:
+    type: choice
+    options:
+      - cir
+      - lorenz
+      - ou
+      - predator_prey
+      - sine
+      - sink
+
+  model:
+    type: choice
+    options:
+      - feedforward
+      - rnn
+      - transformer
+
+gaussian:
+  grid:
+    diffusion:
+      type: choice
+      options:
+        - GaussianDiffusion
+        - ContinuousGaussianDiffusion
+
+gp:
+  grid:
+    diffusion:
+      type: choice
+      options:
+        - GPDiffusion
+        - ContinuousGPDiffusion
+
+    gp_sigma:
+      type: choice
+      options:
+        - 0.01
+        - 0.1
+        - 1
+
+    predict_gaussian_noise:
+      type: choice
+      options:
+        - True
+        - False
+
+ou:
+  grid:
+    diffusion:
+      type: choice
+      options:
+        - OUDiffusion
+        - ContinuousOUDiffusion
+
+    ou_theta:
+      type: choice
+      options:
+        - 5
+        - 0.5
+        - 0.05
+
+    predict_gaussian_noise:
+      type: choice
+      options:
+        - True
+        - False
+
+# ode:
+#   fixed:
+#     model: ode
+#     epochs: 100
+#     batch_size: 16
+#     diffusion: None
+
+# nf:
+#   fixed:
+#     model: nf
+#     diffusion: None
