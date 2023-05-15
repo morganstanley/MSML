@@ -1,0 +1,2 @@
+class NotSupportedModelNoiseCombination(Exception):
+    pass

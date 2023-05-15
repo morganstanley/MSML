@@ -1,0 +1,91 @@
+seml:
+  executable: experiments/synthetic/discriminator_experiment.py
+  name: tsdiff_discriminator
+  output_dir: experiments/logs
+  project_root_dir: ../../
+  conda_environment: place_your_env_here
+
+slurm:
+  experiments_per_job: 1
+  sbatch_options:
+    gres: gpu:1       # num GPUs
+    mem: 16G          # memory
+    cpus-per-task: 2  # num cores
+    time: 0-08:00     # max time, D-HH:MM
+    partition: gpu_all
+
+
+fixed:
+  epochs: 100
+  batch_size: 256
+
+grid:
+  seed:
+    type: range
+    min: 1
+    max: 6
+    step: 1
+
+  dataset:
+    type: choice
+    options:
+      - cir
+      - lorenz
+      - ou
+      - predator_prey
+      - sine
+      - sink
+
+  model:
+    type: choice
+    options:
+      - feedforward
+      - rnn
+
+gaussian:
+  grid:
+    diffusion:
+      type: choice
+      options:
+        - GaussianDiffusion
+        - ContinuousGaussianDiffusion
+
+gp:
+  grid:
+    diffusion:
+      type: choice
+      options:
+        - GPDiffusion
+        - ContinuousGPDiffusion
+
+    gp_sigma:
+      type: choice
+      options:
+        - 0.01
+        - 0.1
+        - 1
+
+ou:
+  grid:
+    diffusion:
+      type: choice
+      options:
+        - OUDiffusion
+        - ContinuousOUDiffusion
+
+    ou_theta:
+      type: choice
+      options:
+        - 5
+        - 0.5
+        - 0.05
+
+ode:
+  fixed:
+    model: ode
+    diffusion: None
+
+nf:
+  fixed:
+    model: nf
+    diffusion: None

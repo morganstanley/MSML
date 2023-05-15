@@ -1,0 +1,83 @@
+seml:
+  executable: experiments/forecasting/experiment.py
+  name: tsdiff_forecast
+  output_dir: experiments/logs
+  project_root_dir: ../../
+  conda_environment: place_your_env_here
+
+slurm:
+  experiments_per_job: 1
+  sbatch_options:
+    gres: gpu:1       # num GPUs
+    mem: 16G          # memory
+    cpus-per-task: 2  # num cores
+    time: 0-08:00     # max time, D-HH:MM
+    partition: gpu_all
+
+
+fixed:
+  epochs: 10
+  learning_rate: 1e-3
+  batch_size: 64
+
+grid:
+  seed:
+    type: range
+    min: 1
+    max: 4
+    step: 1
+
+  dataset:
+    type: choice
+    options:
+      - electricity_nips
+      - solar_nips
+      - traffic_nips
+      - exchange_rate_nips
+
+  diffusion_steps:
+    type: choice
+    options:
+      - 100
+
+  num_cells:
+    type: choice
+    options:
+      - 40
+
+  hidden_dim:
+    type: choice
+    options:
+      - 100
+
+  residual_layers:
+    type: choice
+    options:
+      - 8
+
+old:
+  grid:
+    network:
+      type: choice
+      options:
+        - timegrad
+        - timegrad_old
+
+    noise:
+      type: choice
+      options:
+        - normal
+
+cnn:
+  grid:
+    network:
+      type: choice
+      options:
+        - timegrad_cnn
+
+    noise:
+      type: choice
+      options:
+        - normal
+        - ou
+        - gp
