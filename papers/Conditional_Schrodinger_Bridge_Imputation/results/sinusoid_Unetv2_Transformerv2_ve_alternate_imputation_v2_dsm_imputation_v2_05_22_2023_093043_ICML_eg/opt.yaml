@@ -1,0 +1,261 @@
+DSM_warmup: true
+FID_ckpt: null
+FID_freq: 2
+T: 1.0
+backward_net: Transformerv2
+beta_max: 20
+beta_min: 0.0001
+ckpt_file: null
+ckpt_freq: 1
+ckpt_path: results/sinusoid_Unetv2_Transformerv2_ve_alternate_imputation_v2_dsm_imputation_v2_05_22_2023_093043_
+compute_FID: false
+compute_NLL: false
+cpu: false
+data_dim:
+- 1
+- 8
+- 50
+dataset_missing_ratio: 0.1
+device: cuda:0
+dir: sinusoid_Unetv2_Transformerv2_ve_alternate_imputation_v2_dsm_imputation_v2_05_22_2023_093043_
+dsm_train_method: dsm_imputation_v2
+ema_decay: 0.99
+eval_impute_function: imputation
+eval_itr: 200
+forward_net: Unetv2
+full_eval_every_stage: false
+gpu: 0
+grad_clip: 1.0
+group: '0'
+imputation_eval: false
+input_size: &id001 !!python/tuple
+- 8
+- 50
+interval: 100
+l2_norm: 0.0
+load: null
+log_fn: results/sinusoid_Unetv2_Transformerv2_ve_alternate_imputation_v2_dsm_imputation_v2_05_22_2023_093043_
+log_tb: true
+lr: 0.0005
+lr_b: 3.0e-05
+lr_dsm: 0.0005
+lr_f: 3.0e-05
+lr_gamma: 0.99
+lr_step: 300
+model_configs:
+  Transformerv0: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+    _convert_dict: true
+    _fields:
+      channels:
+      - 64
+      - 64
+      - 64
+      - 64
+      diff_channels: 64
+      diffusion_embedding_dim: 128
+      featureemb: 16
+      input_size: *id001
+      interval: 100
+      layers: 2
+      name: Transformerv0
+      nheads: 8
+      timeemb: 128
+    _locked: false
+    _type_safe: true
+  Transformerv1: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+    _convert_dict: true
+    _fields:
+      channels: 64
+      diffusion_embedding_dim: 128
+      featureemb: 16
+      input_size: !!python/tuple
+      - 8
+      - 50
+      layers: 4
+      name: Transformerv1
+      nheads: 8
+      output_layer: conv1d
+      timeemb: 128
+    _locked: false
+    _type_safe: true
+  Transformerv2: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+    _convert_dict: true
+    _fields:
+      channels: 64
+      diffusion_embedding_dim: 128
+      featureemb: 16
+      input_size: !!python/tuple
+      - 8
+      - 50
+      layers: 4
+      name: Transformerv2
+      nheads: 8
+      output_layer: conv1d
+      timeemb: 128
+    _locked: false
+    _type_safe: true
+  Transformerv3: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+    _convert_dict: true
+    _fields:
+      channels: 64
+      diffusion_embedding_dim: 128
+      featureemb: 16
+      input_size: !!python/tuple
+      - 8
+      - 50
+      layers: 4
+      name: Transformerv3
+      nheads: 8
+      output_layer: conv1d
+      timeemb: 128
+    _locked: false
+    _type_safe: true
+  Transformerv4: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+    _convert_dict: true
+    _fields:
+      channels: 64
+      diffusion_embedding_dim: 128
+      featureemb: 16
+      input_size: !!python/tuple
+      - 8
+      - 50
+      layers: 4
+      name: Transformerv4
+      nheads: 8
+      output_layer: conv1d
+      timeemb: 128
+    _locked: false
+    _type_safe: true
+  Transformerv5: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+    _convert_dict: true
+    _fields:
+      channels: 56
+      diffusion_embedding_dim: 128
+      featureemb: 16
+      input_size: !!python/tuple
+      - 8
+      - 50
+      layers: 4
+      name: Transformerv5
+      nheads: 8
+      output_layer: conv1d
+      timeemb: 64
+    _locked: false
+    _type_safe: true
+  Unetv2: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+    _convert_dict: true
+    _fields:
+      attention_layers:
+      - 1
+      - 2
+      channel_mult: !!python/tuple
+      - 1
+      - 1
+      - 1
+      dropout: 0.0
+      in_channels: 1
+      input_size: *id001
+      name: Unetv2
+      num_channels: 32
+      num_head: 2
+      num_norm_groups: 32
+      num_res_blocks: 2
+      out_channel: 1
+    _locked: false
+    _type_safe: true
+  Unetv3: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+    _convert_dict: true
+    _fields:
+      attention_layers:
+      - 1
+      - 2
+      channel_mult: !!python/tuple
+      - 1
+      - 1
+      - 2
+      - 2
+      dropout: 0.1
+      in_channels: 1
+      input_size: *id001
+      name: Unetv3
+      num_channels: 64
+      num_head: 4
+      num_norm_groups: 32
+      num_res_blocks: 2
+      out_channel: 1
+    _locked: false
+    _type_safe: true
+  toyv2: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+    _convert_dict: true
+    _fields:
+      channels:
+      - 64
+      - 64
+      - 64
+      - 64
+      embed_dim: 256
+      input_size: *id001
+      interval: 100
+      name: toyv2
+    _locked: false
+    _type_safe: true
+  toyv3: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+    _convert_dict: true
+    _fields:
+      channels:
+      - 128
+      - 128
+      - 128
+      embed_dim: 256
+      input_size: *id001
+      interval: 100
+      name: toyv3
+    _locked: false
+    _type_safe: true
+name: debug
+noise_type: gaussian
+normalize_loss: false
+notes: ''
+num_FID_sample: 2000
+num_corrector: 1
+num_epoch: 2
+num_eval_sample: 1
+num_hutchinson_samp: 1
+num_itr: 300
+num_itr_dsm: 3000
+num_stage: 15
+optimizer: AdamW
+output_layer: conv1d
+permute_batch: true
+physio_nfold: 0
+problem_name: sinusoid
+rand_mask_miss_ratio: null
+rand_mask_rank: null
+reset_ema_stage: null
+reuse_traj: false
+samp_bs: 1600
+scale_by_g: false
+sde_type: ve
+seed: 42
+sigma_max: 15.0
+sigma_min: 0.001
+sinusoid_dataset_path: ./data/schrodinger_bridge/sinusoid_dynamic_signal_missratio_0.0_noisestd_0.02.npy
+snapshot_freq: 1
+snr: 0.08
+t0: 0.001
+target_dim_range: null
+tba_features: null
+train_bs_t: 12
+train_bs_t_dsm: 1
+train_bs_x: 12
+train_bs_x_dsm: 80
+train_method: alternate_imputation_v2
+training: !!python/object:ml_collections.config_dict.config_dict.ConfigDict
+  _convert_dict: true
+  _fields: {}
+  _locked: false
+  _type_safe: true
+use_arange_t: false
+use_corrector: false
+warmup_lr_step: 0
+warmup_multiplier: 20

@@ -1,0 +1,7 @@
+{
+    "RMSE": 19.82935066705446,
+    "MAE": 9.847061066373842,
+    "CRPS": 0.1101188157734118,
+    "evalpoints_total": 20490.0,
+    "samples_path": "./results/pm25_Unetv2_Transformerv2_ve_alternate_imputation_v2_dsm_v2_10_12_2022_095150_ICML_eg//generated_100_samples_05_22_2023_133008_corrector.pk"
+}

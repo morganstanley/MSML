@@ -1,0 +1,7 @@
+{
+    "RMSE": 0.06560753635374816,
+    "MAE": 0.04524166584014892,
+    "CRPS": 0.07413544152912341,
+    "evalpoints_total": 1600.0,
+    "samples_path": "./results/sinusoid_Unetv2_Transformerv2_ve_alternate_imputation_v2_dsm_imputation_v2_05_22_2023_093043_//generated_100_samples_05_22_2023_114221.pk"
+}

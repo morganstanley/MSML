@@ -1,0 +1,7 @@
+{
+    "RMSE": 0.5964799894496249,
+    "MAE": 0.32367041524477025,
+    "CRPS": 0.35278174751683283,
+    "evalpoints_total": 130694.0,
+    "samples_path": "results/physio_nfold1_MR0.5_Unetv2_Transformerv2_ve_alternate_imputation_v2_dsm_v2_10_12_2022_100511_backward_cnt//samples100_stageNone_01_23_2023_153146test.pk"
+}
