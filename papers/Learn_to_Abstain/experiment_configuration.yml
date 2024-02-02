@@ -1,0 +1,57 @@
+# Default Configuration
+dataset:        !!str mnist
+
+method:         !!str slearn
+
+num_epoch:      !!int 60
+batch_size:     !!int 256
+lr:             !!float 0.001
+weight_decay:   !!float 0.0001
+mile_stone:     !!seq [15, 35, 55] # [40, 60, 80] for SVHN
+
+lambda_uninform: !!float  0.4
+lambda_inform:   !!float -0.5
+clean_ratio:     !!float 1
+data_num_ratio:  !!float 1
+noise_ratio:     !!float 1
+realizable:      !!bool true
+coverage_target:    !!float 0.5
+
+# volatility data
+context_size_vol:   !!int 30
+
+# training
+gpus:              !!str 0
+seed:              !!int 77
+monitor_window:    !!int 1 
+checkpoint_window: !!int 5
+data_root:         !!str ./data       
+volatility_path:   !!str <Your Path to Volatility Data>  # Download volatility data at https://vbayeslab.github.io/VBLabDocs/datasets/#realized-library         
+bus_path:          !!str <Your Path to BUS Data>         # Download BUS data at https://www.kaggle.com/datasets/aryashah2k/breast-ultrasound-images-dataset     
+lendingclub_path:  !!str <Your Path to LendingClub Data> # Download LC data at  https://www.kaggle.com/datasets/wordsforthewise/lending-club                    
+figure_folder:     !!str ./figure     
+checkpoint_folder: !!str ./checkpoint 
+result_folder:     !!str ./result     
+verbose:           !!bool true
+
+use_checkpoint:    !!bool false
+
+# selector hyper-params here
+# SelectiveNet
+alpha:             !!float 0.5
+lamda:             !!float 32
+# DeepGambler
+O:                 !!float 2
+pretrain_gambler:  !!int   10
+# Adaptive
+pretrain_adaptive: !!int   10
+momentum_adaptive: !!float 0.9
+# Oneside
+pretrain_oneside:  !!int   10
+mu_oneside:        !!float 0.5
+# ISA
+beta:              !!float 3
+pretrain_isa:   !!int 5
+update_interval:   !!int 10
+use_smooth:      !!bool True
+sel_loss:      !!int 1
