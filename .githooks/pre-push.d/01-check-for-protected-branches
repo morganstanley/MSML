@@ -1,0 +1,50 @@
+#!/bin/bash
+
+PROTECTED_BRANCHES="master main"
+
+GIT_PRE_PUSH_OVERRIDE_PROTECTED_BRANCHES=${GIT_PRE_PUSH_OVERRIDE_PROTECTED_BRANCHES:-false}
+
+REMOTE=$1
+URL=$2
+LOCAL_REF=$3
+LOCAL_SHA=$4
+REMOTE_REF=$5
+REMOTE_SHA=$6
+
+LIGHTRED="\e[1;31m"
+CYAN="\e[36m"
+YELLOW="\e[1;33m"
+RESET="\e[0m"
+
+function print_errmsg() {
+    echo -en "${LIGHTRED}"
+    echo -en "error: Pushing from or to a protected branch is restricted: "
+    echo -en "${RESET}"
+    echo -en "${PROTECTED_BRANCHES}\n\n"
+    echo -en "${YELLOW}"
+    echo -en "If this assessment is invalid you can override this check with:\n\n"
+    echo -en "${CYAN}"
+    echo -en "GIT_PRE_PUSH_OVERRIDE_PROTECTED_BRANCHES=true git push ..."
+    echo -en "\n\n"
+    echo -e "${RESET}"
+}
+
+if ${GIT_PRE_PUSH_OVERRIDE_PROTECTED_BRANCHES}; then
+    exit 0
+fi
+
+for protected_branch in ${PROTECTED_BRANCHES}
+do
+    local_branch=$(basename "${LOCAL_REF}")
+    remote_branch=$(basename "${REMOTE_REF}")
+    if [ "${local_branch}" == "${protected_branch}" ]; then
+        print_errmsg
+        exit 1
+    fi
+    if [ "${remote_branch}" == "${protected_branch}" ]; then
+        print_errmsg
+        exit 1
+    fi
+done
+
+exit 0

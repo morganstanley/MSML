@@ -1,0 +1,36 @@
+#!/bin/bash
+
+GIT_PRE_PUSH_PERSONAL_REPO_OVERRIDE=${GIT_PRE_PUSH_PERSONAL_REPO_OVERRIDE:-false}
+
+REMOTE=$1
+URL=$2
+LOCAL_REF=$3
+LOCAL_SHA=$4
+REMOTE_REF=$5
+REMOTE_SHA=$6
+
+USER=$(id -un)
+
+LIGHTRED="\e[1;31m"
+CYAN="\e[36m"
+YELLOW="\e[1;33m"
+RESET="\e[0m"
+
+if ${GIT_PRE_PUSH_PERSONAL_REPO_OVERRIDE}; then
+    exit 0
+fi
+
+if [[ "${URL}" != *"/~${USER}/"* ]]; then
+    echo -en "${LIGHTRED}"
+    echo -en "error: Pushing to non-personal repos is restricted: "
+    echo -en "${URL}\n\n"
+    echo -en "${YELLOW}"
+    echo -en "If this assessment is invalid you can override this check with:\n\n"
+    echo -en "${CYAN}"
+    echo -en "GIT_PRE_PUSH_PERSONAL_REPO_OVERRIDE=true git push ..."
+    echo -en "\n\n"
+    echo -e "${RESET}"
+    exit 1
+fi
+
+exit 0
