@@ -1,0 +1,41 @@
+MF: null
+MLP:
+  lr: 0.0001
+  net:
+    act: tanh
+    grad_sigma: false
+    num_cond_inputs: 1
+    num_hid_layers: 8
+    num_hidden: 128
+    num_inputs: 26
+    num_outputs: 26
+    sigma: 1
+    sigma_net: true
+NF: null
+dataset:
+  T: 0.1
+  dataset_type: hepmass_1000_train.csv
+  datatype: hepmass
+  generative: true
+  n_bridge: 30
+  n_points: 25
+  n_samples: 100
+  path: /global/path/data/realGen/
+  simulation: true
+  split_size: null
+  split_type: null
+  subset_time: null
+head: hepmass
+loader:
+  batch_size_paths: 200
+  batch_size_points: 512
+n_runs: 5
+n_tries: 1
+optimizer:
+  n_epochs: 500
+  name: AdamW
+other:
+  loss_type: girsanov
+  test_n_particles: 500
+  test_y_samp_size: 128
+  train_y_samp_size: 128

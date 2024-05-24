@@ -1,0 +1,36 @@
+MF: null
+MLP:
+  lr: 0.0001
+  net:
+    act: leakyrelu
+    grad_sigma: false
+    num_cond_inputs: 1
+    num_hid_layers: 8
+    num_hidden: 128
+    num_inputs: 10
+    num_outputs: 10
+    sigma: 1
+NF: null
+dataset:
+  T: 0.1
+  d: 10
+  datatype: eightgauss
+  generative: true
+  n_bridge: 10
+  n_points: 25
+  n_samples: 15
+  simulation: true
+head: eightgauss
+loader:
+  batch_size_paths: 200
+  batch_size_points: 512
+n_runs: 5
+n_tries: 1
+optimizer:
+  n_epochs: 2000
+  name: AdamW
+other:
+  loss_type: girsanov
+  test_n_particles: 50
+  test_y_samp_size: 128
+  train_y_samp_size: 128

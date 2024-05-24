@@ -1,0 +1,35 @@
+MF: null
+MLP:
+  lr: 0.001
+  net:
+    act: tanh
+    grad_sigma: false
+    num_cond_inputs: 1
+    num_hid_layers: 4
+    num_hidden: 128
+    num_inputs: 2
+    num_outputs: 2
+    sigma: 1
+NF: null
+dataset:
+  T: 0.1
+  datatype: pinwheel
+  generative: true
+  n_bridge: 1
+  n_points: 25
+  n_samples: 200
+  simulation: true
+head: pinwheel
+loader:
+  batch_size_paths: 20
+  batch_size_points: 512
+n_runs: 10
+n_tries: 1
+optimizer:
+  n_epochs: 200
+  name: AdamW
+other:
+  loss_type: girsanov
+  test_n_particles: 200
+  test_y_samp_size: 128
+  train_y_samp_size: 128
