@@ -1,0 +1,39 @@
+MF: null
+MLP:
+  lr: 0.0001
+  net:
+    act: leakyrelu
+    num_cond_inputs: 1
+    num_hid_layers: 8
+    num_hidden: 128
+    num_inputs: 2
+    num_outputs: 2
+    sigma: 1
+NF: null
+dataset:
+  fcn_Ku: '[abs(X - xi)-abs(xi - X), abs(Y - yi) - abs(yi - Y)]'
+  fcn_h: '[-xi, -yi]'
+  fcn_sigma: '1'
+  fore_range: 0.2
+  irregular: false
+  k: 2
+  n_jumps: 1
+  n_particles: 100
+  n_points: 100
+  simulation: true
+  t0: 0
+  tn: 5
+head: OU_jump
+loader:
+  batch_size_paths: 20
+  batch_size_points: 512
+n_runs: 10
+n_tries: 1
+optimizer:
+  n_epochs: 500
+  name: AdamW
+other:
+  loss_type: girsanov
+  test_n_particles: 100
+  test_y_samp_size: 128
+  train_y_samp_size: 128

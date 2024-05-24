@@ -1,0 +1,49 @@
+MF:
+  lr: 0.0001
+  net:
+    W_0_hidden: 0
+    f_act: leakyrelu
+    f_num_hid_layers: 1
+    f_num_hidden: 64
+    g_act: leakyrelu
+    g_num_hid_layers: 1
+    g_num_hidden: 64
+    label_f: false
+    label_g: false
+    label_x: 0
+    label_y: 0
+    num_cond_inputs: 1
+    num_inputs: 2
+    sigma: 0.1
+NF:
+  lr: 0.0001
+  net:
+    num_cond_inputs: 1
+    num_hidden: 128
+    num_inputs: 2
+    s_act: tanh
+    t_act: relu
+  num_blocks: 1
+dataset:
+  dataset_type: null
+  path: /global/path/MV-SDE/data/
+  scale_t: 1
+  seed: 1
+  simulation: false
+  split_size: 0.8-0.1-0.1-0.8
+  split_type: both
+  subset_time: null
+head: EEG
+loader:
+  batch_size_paths: 5
+  batch_size_points: 1024
+n_runs: 5
+n_tries: 1
+optimizer:
+  n_epochs: 200
+  name: AdamW
+other:
+  loss_type: girsanov
+  test_n_particles: 100
+  test_y_samp_size: 128
+  train_y_samp_size: 128

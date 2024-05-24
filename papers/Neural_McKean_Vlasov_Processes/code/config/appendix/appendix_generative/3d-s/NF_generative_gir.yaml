@@ -1,0 +1,50 @@
+MF:
+  lr: 0.0001
+  net:
+    W_0_hidden: 0
+    f_act: leakyrelu
+    f_num_hid_layers: 4
+    f_num_hidden: 128
+    g_act: leakyrelu
+    g_num_hid_layers: 4
+    g_num_hidden: 128
+    grad_sigma: false
+    label_f: false
+    label_g: false
+    label_x: 0
+    label_y: 0
+    num_cond_inputs: 1
+    num_inputs: 3
+    sigma: 1
+MLP: null
+NF:
+  lr: 0.0001
+  net:
+    num_cond_inputs: 1
+    num_hidden: 32
+    num_inputs: 3
+    s_act: tanh
+    t_act: relu
+  num_blocks: 1
+dataset:
+  T: 0.1
+  datatype: 3d-s
+  generative: true
+  n_bridge: 1
+  n_points: 50
+  n_samples: 2000
+  simulation: true
+head: 3d-s
+loader:
+  batch_size_paths: 200
+  batch_size_points: 512
+n_runs: 5
+n_tries: 1
+optimizer:
+  n_epochs: 2000
+  name: AdamW
+other:
+  loss_type: girsanov
+  test_n_particles: 500
+  test_y_samp_size: 128
+  train_y_samp_size: 128
