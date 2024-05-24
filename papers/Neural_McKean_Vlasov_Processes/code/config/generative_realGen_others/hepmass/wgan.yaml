@@ -1,0 +1,16 @@
+dataset:
+  dataset_type: hepmass_1000_train.csv
+  path: /global/path/data/realGen/
+discriminator:
+  lr: 0.0001
+generator:
+  latent_dim: 50
+  lr: 0.0001
+head: hepmass
+loader:
+  batch_size: 200
+model: wgan
+n_critic: 5
+n_epochs: 100
+n_runs: 10
+n_tries: 1

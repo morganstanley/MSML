@@ -1,0 +1,34 @@
+MF: null
+MLP:
+  lr: 0.0001
+  net:
+    act: tanh
+    num_cond_inputs: 1
+    num_hid_layers: 8
+    num_hidden: 128
+    num_inputs: 3
+    num_outputs: 3
+    sigma: 1.5
+NF: null
+dataset:
+  dataset_type: V_0208
+  path: /global/path/data/chemotaxi/
+  scale_t: 1
+  simulation: false
+  split_size: 0.8-0.1-0.1-0.8
+  split_type: both
+  subset_time: null
+head: Chemotaxi
+loader:
+  batch_size_paths: 50
+  batch_size_points: 1024
+n_runs: 5
+n_tries: 1
+optimizer:
+  n_epochs: 500
+  name: AdamW
+other:
+  loss_type: girsanov
+  test_n_particles: 100
+  test_y_samp_size: 128
+  train_y_samp_size: 128

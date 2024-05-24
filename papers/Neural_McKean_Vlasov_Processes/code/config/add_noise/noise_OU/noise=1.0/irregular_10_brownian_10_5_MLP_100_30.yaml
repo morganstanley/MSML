@@ -1,0 +1,42 @@
+head: 'OU'
+dataset:
+        simulation: True
+        fcn_h: '[-3*(xi), -2*(yi)]'
+        fcn_Ku: '[abs(X - xi) - abs(xi - X), abs(Y - yi) - abs(yi - Y)]'
+        fcn_sigma: '1'
+        n_points: 100
+        n_particles: 20
+        t0: 0
+        tn: 5
+        k: 2
+        fore_range: 0.2
+        irregular: True
+        n_irreg: 20
+n_runs: 10
+n_tries: 1
+NF: Null
+MF: Null
+MLP:
+        lr: 0.0001
+        net:
+            num_inputs: 2
+            num_outputs: 2
+            num_cond_inputs: 1
+            num_hid_layers: 4
+            num_hidden: 128
+            sigma: 1
+            act: 'leakyrelu'
+loader: 
+        batch_size_points: 512
+        batch_size_paths: 10
+optimizer:
+        name: 'AdamW'
+        n_epochs: 500
+other: 
+        brownian: True
+        bb_n: 10
+        bb_m: 5
+        loss_type: "girsanov"
+        test_n_particles: 100
+        train_y_samp_size: 128
+        test_y_samp_size: 128

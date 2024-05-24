@@ -1,0 +1,61 @@
+head: 'opinion'
+dataset:
+        simulation: True
+        fcn_h: "[None,None]"
+        fcn_Ku: "[None,None]"
+        influence: True
+        fcn_sigma: '0.5'
+        n_points: 100
+        n_particles: 20
+        t0: 0
+        tn: 100
+        k: 2
+        fore_range: 0.2
+        irregular: True
+        n_irreg: 20
+        grid_init: True
+        grid_space: 12
+n_runs: 10
+n_tries: 1
+NF:
+        lr: 0.0001
+        num_blocks: 1
+        net:
+                num_inputs: 2
+                num_hidden: 32
+                num_cond_inputs: 1
+                s_act: 'tanh'
+                t_act: 'relu'
+MF:
+        lr: 0.0001
+        net:
+            num_inputs: 2
+            num_cond_inputs: 1
+            g_num_hid_layers: 4
+            g_num_hidden: 128
+            f_num_hid_layers: 4
+            f_num_hidden: 128
+            W_0_hidden: 0
+            sigma: 0.5
+            g_act: 'leakyrelu'
+            f_act: 'leakyrelu'
+            label_x: 0
+            label_y: 0
+            label_g: False
+            label_f: False
+            grad_sigma: False
+MLP: Null
+loader: 
+        batch_size_points: 512
+        batch_size_paths: 10
+optimizer:
+        name: 'AdamW'
+        n_epochs: 500
+other: 
+        brownian: True
+        bb_n: 10
+        bb_m: 5
+        loss_type: "girsanov"
+        test_n_particles: 100
+        train_y_samp_size: 128
+        test_y_samp_size: 128

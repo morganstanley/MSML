@@ -1,0 +1,16 @@
+dataset:
+  dataset_type: ethylene_CO.pickle
+  path: /global/path/data/realGen/
+head: ethylene_CO
+loader:
+  batch_size: 200
+maf:
+  lr: 0.0001
+  num_blocks: 4
+  num_hidden: 128
+  s_act: tanh
+  t_act: relu
+model: maf
+n_epochs: 100
+n_runs: 10
+n_tries: 1

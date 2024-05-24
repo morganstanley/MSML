@@ -1,0 +1,40 @@
+MF: null
+MLP: null
+NF: null
+dataset:
+  dataset_type: co2c0000338/co2c0000338.rd.016
+  path: /global/path/data/EEG/
+  scale_t: 1
+  seed: 3
+  simulation: false
+  split_size: 0.8-0.1-0.1-0.8
+  split_type: both
+  subset_time: null
+deepAR:
+  lr: 0.001
+  net:
+    act: leakyrelu
+    bidirectional: false
+    num_cond_inputs: null
+    num_dense_hidden: 130
+    num_dense_layers: 0
+    num_outputs: 1
+    num_rnn_hidden: 130
+    num_rnn_inputs: 1
+    num_rnn_layers: 3
+    rnn: rnn
+  window_size: 20
+head: EEG
+loader:
+  batch_size_paths: 5
+  batch_size_points: 1024
+n_runs: 5
+n_tries: 1
+optimizer:
+  n_epochs: 500
+  name: AdamW
+other:
+  loss_type: gaussian
+  test_n_particles: 100
+  test_y_samp_size: 128
+  train_y_samp_size: 128
