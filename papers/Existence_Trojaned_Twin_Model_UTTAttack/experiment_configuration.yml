@@ -1,0 +1,98 @@
+dataset:
+  cifar10:
+    NUM_CLASSES:  !!int 10
+    NUM_CHANNELS: !!int 3
+    IMG_SIZE:     !!int 32
+  gtsrb:
+    NUM_CLASSES:  !!int 43
+    NUM_CHANNELS: !!int 3
+    IMG_SIZE:     !!int 32
+  imagenet:
+    NUM_CLASSES:  !!int 10
+    NUM_CHANNELS: !!int 3
+    IMG_SIZE:     !!int 112
+
+network:
+  RESUME:   !!bool false  # if start from pretrained ckpt
+  CKPT:     !!str  ''     # pretrained ckpt path
+
+train:
+  # general training setup
+  LR:              !!float 0.1
+  WEIGHT_DECAY:    !!float 0.0001
+  MOMENTUM:        !!float 0.9
+  USE_TRANSFORM:   !!bool true
+  USE_CLIP:        !!bool true
+  DISTRIBUTED:     !!bool false
+  # adversarial training extra setup
+  ADV_TRAIN:    !!bool true    # use adversarial training
+  EPS:          !!float 0.1     # adversarial pattern update step size
+  RADIUS:       !!float 0.1     # adversarial perturbation radius
+  ADV_EPOCHS:   !!int 2         # inner loop training epoch
+  LAMBDA:       !!float 0.2     # coefficient for adv training loss
+
+  cifar10:
+    N_EPOCHS:     !!int 200
+    BATCH_SIZE:   !!int 128
+    MILE_STONE:   !!seq [50, 100, 150]
+    T_MAX:        !!int 200
+    GAMMA:        !!float 0.1
+    BACKEND:       !!str 'nccl'
+  gtsrb:
+    N_EPOCHS:     !!int 200
+    BATCH_SIZE:   !!int 128
+    MILE_STONE:   !!seq [50, 100, 150]
+    T_MAX:        !!int 200
+    GAMMA:        !!float 0.1
+    BACKEND:      !!str 'nccl'
+  imagenet:
+    N_EPOCHS:     !!int   200
+    BATCH_SIZE:   !!int   16
+    MILE_STONE:   !!seq   [50, 100, 150]
+    T_MAX:        !!int   200
+    GAMMA:        !!float 0.1
+    BACKEND:      !!str   'nccl'
+
+
+attack: 
+  BUDGET:         !!float 10.0 # L2 norm constrain of trigger
+  INJECT_RATIO:  !!float 0.2
+  SOURCE_TARGET_PAIR: !!map {0: 1}
+  TRIGGER_SAVE_DIR:   !!str './result/triggers'
+  LAMBDA:             !!float 0.5
+  XI:                 !!float 1   # attack strength upscale factor
+  
+  badnet:
+    TRIGGER_SHAPE: !!int 3
+  ref: 
+    # download pascal at  https://pjreddie.com/projects/pascal-voc-dataset-mirror/
+    REFSET_ROOT:   !!str  '</Your/Path/To/PASCAL>'  # PASCAL root (PASCAL imgs are used as trigger candidate)
+    N_TRIGGER:     !!int    200                     # num of finally kept triggers
+    T_EPOCH:       !!int    10                      # trigger generation optimization iterations
+    GHOST_RATE:    !!float  0.39                    # ratio to use ghost reflection
+    SAVE_TRIGGER:  !!bool   true    
+    SURROGATE_NETWORK:  !!str <Default Surrogate Network>
+    SURROGATE_CKPT:     !!str </Path/To/Default Surrogate Network CKPT> 
+  warp:
+    CROSS_RATE: !!float 2
+    S:          !!float 0.5
+    K:          !!int 4
+  imc:
+    N_TRIGGER:     !!int 1
+    TRIGGER_LR:    !!float 0.1
+    NEURON_EPOCH:  !!int 1000
+  utt:
+    OPTIM_EPOCHS:  !!int 10
+    ETA:           !!float 0.1
+    N_IMAGES:      !!int 5000      # num of images to be edited by ULP
+    N_UTT:         !!int 5         # num of ULP pattern used
+    FOOLING_RATE:  !!float 0.95    # proportion of images to be fooled before termination
+    N_SAMPLES:     !!int 20      
+    XI_PRIME:      !!float 2       # upper bound of trigger budget
+    SURROGATE_NETWORK:  !!str  <Default Surrogate Network>
+    SURROGATE_CKPT:     !!str  </Path/To/Default Surrogate Network CKPT>
+  
+misc:
+  VERBOSE:           !!bool true
+  MONITOR_WINDOW:    !!int 1
+  CHECKPOINT_WINDOW: !!int 10
