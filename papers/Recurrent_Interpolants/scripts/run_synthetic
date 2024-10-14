@@ -1,0 +1,49 @@
+#!/bin/bash
+
+# All models and all large datasets experiment - modeling from noise
+for target in "swissroll-L" "circles-L" "rings-L" "moons-L" "8gaussians-L" "pinwheel-L" "spiral-L" "2spirals-L" "checkerboard-L" "line-L" "cos-L"
+do
+    for seed in 1
+    do
+        for net in "resnet-3"
+        do
+            for model in "ddpm-cosine" "sgm" "fm" "si-trig-trig" "si-trig-linear" "si-trig-encdec" "si-quad-trig" \
+                "si-quad-linear" "si-quad-encdec" "si-sqrt-trig" "si-sqrt-linear" "si-sqrt-encdec" "si-zero-trig" \
+                "si-zero-linear" "si-zero-encdec"
+            do
+                python -m time_match.experiment.synthetic --seed $seed --target $target --model $model --net $net --device 0
+            done
+        done
+    done
+done
+
+# Data efficiency of models
+for target in "swissroll-S" "swissroll-L" "swissroll-M" "swissroll-XS" "swissroll-XL"
+do
+    for seed in 1 2 3
+    do
+        for net in "resnet-3"
+        do
+            for model in "si-trig-trig" "fm" "ddpm-linear" "sgm"
+            do
+                python -m time_match.experiment.synthetic --seed $seed --target $target --model $model --net $net --device 0
+            done
+        done
+    done
+done
+
+# Parameter efficiency of models
+for target in "swissroll-L"
+do
+    for seed in 1 2 3
+    do
+        for net in "resnet-1" "resnet-3" "resnet-6"
+        do
+            for model in "si-trig-trig" "fm" "ddpm-linear" "sgm"
+            do
+                python -m time_match.experiment.synthetic --seed $seed --target $target --model $model --net $net --device 0 &
+            done
+            wait
+        done
+    done
+done

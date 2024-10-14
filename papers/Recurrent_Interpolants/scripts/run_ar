@@ -1,0 +1,15 @@
+#!/bin/bash
+
+for model in "ddpm-linear" "ddpm-cosine" "sgm" "fm" "si-trig-trig" "si-trig-linear" "si-trig-encdec" "si-quad-trig" "si-quad-linear" "si-quad-encdec" "si-sqrt-trig" "si-sqrt-linear" "si-sqrt-encdec" "si-zero-trig" "si-zero-linear" "si-zero-encdec"
+do
+    for net in "ff-1-wide"
+    do
+        for size in 100 1000 10000 100000
+        do
+            for seed in 1
+            do
+                python -m time_match.experiment.ar --seed $seed --data_size $size --model $model --net $net --device 0
+            done
+        done
+    done
+done
