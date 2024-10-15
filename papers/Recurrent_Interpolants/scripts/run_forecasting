@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# Stochastic interpolant
+for data in "solar_nips" "electricity_nips"  "traffic_nips" "exchange_rate_nips" "wiki-rolling_nips"
+do
+    for seed in 1 2 3 4 5
+    do
+        python -m time_match.experiment.forecasting --dataset $data --estimator si --scaling mean --denoising_model epsilon_theta \
+            --steps 100 --epochs 50 --batch_size 32 --hidden_size 64 --interpolant trig --gamma sqrt \
+            --num_layers 2 --seed $seed --device 0
+    done
+done
+
+# Score based
+for data in "solar_nips" "electricity_nips"  "traffic_nips" "exchange_rate_nips" "wiki-rolling_nips"
+do
+    for seed in 1 2 3 4 5
+    do
+        python -m time_match.experiment.forecasting --dataset $data --estimator sgm --scaling mean --denoising_model epsilon_theta \
+            --beta_start 0.1 --beta_end 20 --steps 150 --epochs 200 --batch_size 32 --hidden_size 64 \
+            --num_layers 2 --seed $seed --device 0
+    done
+done
+
+# Flow matching
+for data in "solar_nips" "electricity_nips"  "traffic_nips" "exchange_rate_nips" "wiki-rolling_nips"
+do
+    for seed in 1 2 3 4 5
+    do
+        python -m time_match.experiment.forecasting --dataset $data --estimator fm --scaling std --denoising_model epsilon_theta \
+            --sigma_min 0.01 --steps 150 --epochs 200 --batch_size 32 --hidden_size 64 \
+            --num_layers 2 --seed $seed --device 0
+    done
+done
+
+# Denoising diffusion
+for data in "solar_nips" "electricity_nips"  "traffic_nips" "exchange_rate_nips" "wiki-rolling_nips"
+do
+    for seed in 1 2 3 4 5
+    do
+        python -m time_match.experiment.forecasting --dataset $data --estimator ddpm --scaling mean --denoising_model epsilon_theta \
+            --beta_start 1e-4 --beta_end 0.1 --steps 150 --epochs 200 --batch_size 32 --hidden_size 64 \
+            --num_layers 2 --seed $seed --device 0
+    done
+done
