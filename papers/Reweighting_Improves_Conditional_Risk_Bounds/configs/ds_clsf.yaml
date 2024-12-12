@@ -1,0 +1,62 @@
+DGP:
+  dgp_str: 'mixtureGaussian'
+  description: 'features are generated from mixture Gaussian with equal covariance'
+  num_train: 50000
+  num_val: 5000
+  num_test: 2000
+  num_replicas: 10
+  
+  Sigma: [[2.0,0],[0,4.0]]
+  mu_0x: [-10.0,0]
+  p_0x: 0.5
+  mu_0: [-3.0,0]
+  p_0: 0.25
+  mu_1: [3.0,0]
+  p_1: 0.20
+  mu_1x: [12.0,0]
+  p_1x: 0.05
+  flipping_prob: 0.49
+
+dataloader:
+  batch_size: 64
+  shuffle: False
+  num_workers: 2
+
+network_params:
+  module_type: 'Linear'
+  input_dim: 2
+  output_dim: 1
+  use_softplus: False
+  clip: False
+
+loss_params:
+  loss_type: 'weightedBCE'
+
+network_params_margin:  ## used in learning the margin
+  module_type: 'MLP'
+  input_dim: 2
+  output_dim: 1
+  hidden_dims: [256, 256]
+  dropout_rate: 0.1
+  activation: 'relu'
+  use_softplus: False
+  clip: False
+  
+loss_params_margin:
+  loss_type: 'weightedMSE'
+  apply_sigmoid: True
+
+optimizer:
+  learning_rate: 0.001
+  monitor: 'val_acc'
+  scheduler_type: 'ReduceLROnPlateau'
+  reduceLR_factor: 0.5
+  reduceLR_patience: 5
+
+run_params:
+  max_epochs: 100
+  es_patience: 10
+  limit_val_batches: 50
+  gradient_clip_val: 0.5
+  reweight_iters: 2
+  load_from_ckpt: null
