@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+import importlib
+import os
+from pathlib import Path
+import pickle
+import shutil
+import sys
+
+_ROOTDIR_ = str(Path(__file__).resolve().parents[1])
+sys.path.append(_ROOTDIR_)
+os.chdir(_ROOTDIR_)
+
+import click
+import torch
+import yaml
+
+from utils.logging import get_logger
+
+logger = get_logger()
+
+@click.command()
+@click.option("--ds-str", help='short code for the dataset to run', required=True, type=str)
+@click.option("--train-size", help='number of training samples',type=int, required=True, default=20000)
+@click.option("--n-replica", help='number of data replicates to run', type=int, required=False, default=10)
+@click.option("--cuda", help='id for the cuda device to use', type=int, required=False, default=0)
+@click.option("--config-file-override", help='path to the config file override, default to None',
+                type=click.Path(exists=True, dir_okay=False, readable=True), required=False, default=None)
+
+def main(ds_str, train_size, n_replica, cuda, config_file_override):
+    
+    if not torch.cuda.is_available():
+        logger.warning('cuda is NOT available')
+    else:
+        logger.info(f'running on cuda:{cuda}')
+    
+    run_args = {'n_replica': n_replica, 'train_size': train_size,
+                'accelerator': 'gpu' if torch.cuda.is_available() else 'cpu',
+                'devices': [cuda] if torch.cuda.is_available() else 1}
+    
+    ###################################
+    ## Load config
+    ###################################
+    config_file = config_file_override or os.path.join('configs',f'{ds_str}.yaml')
+    logger.info(f'config file in use={config_file}')
+    with open(config_file) as f_ds:
+        configs = yaml.safe_load(f_ds)
+    
+    ###################################
+    ## retrieve experiment runner and loop over each data replicate
+    ###################################
+    available_trainers = importlib.import_module('src')
+    TrainerClass = getattr(available_trainers, f'Trainer{ds_str.split("_")[1].capitalize()}')
+    logger.info(f'experiment_runner={TrainerClass.__class__.__name__} retrieved; n_replica={n_replica}')
+    
+    for replica_id in range(n_replica):
+    
+        output_dir = os.path.join('output_sim', ds_str, f'replica{replica_id}_{train_size}')
+        if os.path.exists(output_dir):
+            shutil.rmtree(output_dir)
+            os.mkdir(output_dir)
+            logger.info(f'{output_dir} created')
+        
+        ckpt_dir = os.path.join(output_dir, 'ckpts')
+        if not os.path.exists(ckpt_dir):
+            os.makedirs(ckpt_dir)
+        else:
+            shutil.rmtree(ckpt_dir)
+            os.mkdir(ckpt_dir)
+        
+        lightning_logs_dir = os.path.join(output_dir, 'lightning_logs')
+        if os.path.exists(lightning_logs_dir):
+            shutil.rmtree(lightning_logs_dir)
+        
+        run_args['output_dir'], run_args['ckpt_dir'] = output_dir, ckpt_dir
+        logger.info(f'started running replica_id = {replica_id} ({replica_id+1}/{n_replica})')
+        ## load data
+        file_train = os.path.join('data_sim', ds_str, f'{replica_id}_train.pickle')
+        with open(file_train, 'rb') as handle:
+            data_train = pickle.load(handle)
+
+        file_val = os.path.join('data_sim', ds_str, f'{replica_id}_val.pickle')
+        with open(file_val, 'rb') as handle:
+            data_val = pickle.load(handle)
+
+        file_test = os.path.join('data_sim', ds_str, f'{replica_id}_test.pickle')
+        with open(file_test, 'rb') as handle:
+            data_test = pickle.load(handle)
+        
+        ## initialize experiment runner and run end2end
+        experiment_runner = TrainerClass(run_args=run_args, configs=configs)
+        experiment_runner.end_to_end(data_train, data_val, data_test)
+        
+        logger.info(f'done running {replica_id+1}/{n_replica}')
+        
+    return 0
+
+
+if __name__ == "__main__":
+    
+    logger.info(f'CWD={os.getcwd()}')
+    logger.info(f'python={".".join(map(str,sys.version_info[:3]))}; torch={torch.__version__}')
+    main(auto_envvar_prefix='WEIGHTED_ERM')
