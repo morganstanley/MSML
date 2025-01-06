@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+import os
+from pathlib import Path
+import pickle
+import sys
+
+_ROOTDIR_ = str(Path(__file__).resolve().parents[1])
+sys.path.append(_ROOTDIR_)
+os.chdir(_ROOTDIR_)
+
+import click
+import yaml
+
+from src.simulator import SimClsf
+from utils.logging import get_logger
+
+logger = get_logger()
+
+@click.command()
+@click.option("--ds-str", help='short code for the dataset to simulate', required=True, type=str)
+@click.option("--view-dataset/--no-view-dataset", help='whether to generate a plot for the simulated dataset', default=False)
+def main(ds_str, view_dataset):
+
+    save_dir = os.path.join('data_sim', ds_str)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    config_file = os.path.join('configs', f'{ds_str}.yaml')
+    logger.info(f'config file in use={config_file}')
+    with open(config_file) as f:
+        ds_params = yaml.safe_load(f)['DGP']
+
+    num_train, num_val, num_test = ds_params['num_train'], ds_params['num_val'], ds_params['num_test']
+    n_total = num_train + num_val + num_test
+    num_replicates = ds_params['num_replicas']
+    
+    dgp_str = ds_params['dgp_str']
+    
+    logger.info(f'simulating dataset={ds_str} with {num_replicates} replicates')
+    simulator = SimClsf(ds_params,seed=ds_params.get('seed',None))
+    meta_data = simulator.generate_dataset(dgp_str, n_total, num_of_replicates=num_replicates)
+    logger.info('done generating meta data')
+    
+    ## split into train-val-test
+    for replica_id, (x,y) in enumerate(meta_data['data_with_replica']):
+    
+        eta, gamma, membership = meta_data['ground_truth'][replica_id]
+        #### save down training data
+        data_train = {'y': y[:num_train],
+                      'x': x[:num_train],
+                      'eta': eta[:num_train],
+                      'gamma': gamma[:num_train],
+                      'membership': membership[:num_train]}
+        
+        filename = os.path.join(save_dir, f'{replica_id}_train.pickle')
+        with open(filename, 'wb') as handle:
+            pickle.dump(data_train, handle, protocol = pickle.HIGHEST_PROTOCOL)
+            logger.info(f'saving training data for replica {replica_id} at {filename}')
+        
+        offset = num_train
+        #### save down validation data
+        data_val = {'y': y[offset:(offset + num_val)],
+                    'x': x[offset:(offset + num_val)],
+                    'eta': eta[offset:(offset + num_val)],
+                    'gamma': gamma[offset:(offset + num_val)],
+                    'membership': membership[offset:(offset + num_val)]}
+        
+        filename = os.path.join(save_dir, f'{replica_id}_val.pickle')
+        with open(filename, 'wb') as handle:
+            pickle.dump(data_val, handle, protocol = pickle.HIGHEST_PROTOCOL)
+            logger.info(f'saving validation data for replica {replica_id} at {filename}')
+        
+        offset = num_train + num_val
+        #### save down test data
+        data_test = {'y': y[offset:(offset + num_test)],
+                     'x': x[offset:(offset + num_test)],
+                     'eta': eta[offset:(offset + num_test)],
+                     'gamma': gamma[offset:(offset + num_test)],
+                     'membership': membership[offset:(offset + num_test)]}
+        
+        filename = os.path.join(save_dir, f'{replica_id}_test.pickle')
+        with open(filename, 'wb') as handle:
+            pickle.dump(data_test, handle, protocol = pickle.HIGHEST_PROTOCOL)
+            logger.info(f'saving test data for replica {replica_id} at {filename}')
+        
+    logger.info(f'done saving data')
+
+    if view_dataset:
+        simulator.view_dataset(data_test, save_file_as=os.path.join(save_dir,'sample_testset.png'))
+        logger.info('sample dataset plot saved')
+    
+    return 0
+
+
+if __name__ == "__main__":
+    
+    logger.info(f'CWD={os.getcwd()}')
+    logger.info(f'python={".".join(map(str,sys.version_info[:3]))}')
+    main(auto_envvar_prefix='WEIGHTED_ERM')

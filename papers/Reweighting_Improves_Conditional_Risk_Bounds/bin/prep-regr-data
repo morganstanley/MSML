@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+import os
+from pathlib import Path
+import pickle
+import sys
+import time
+
+_ROOTDIR_ = str(Path(__file__).resolve().parents[1])
+sys.path.append(_ROOTDIR_)
+os.chdir(_ROOTDIR_)
+
+import click
+import yaml
+
+from src.simulator import SimRegr
+from utils.logging import get_logger
+
+logger = get_logger()
+
+@click.command()
+@click.option("--ds-str", help='short code for the dataset to simulate', required=True, type=str)
+@click.option("--view-dataset/--no-view-dataset", help='whether to generate a plot for the simulated dataset', default=False)
+def main(ds_str, view_dataset):
+
+    save_dir = os.path.join('data_sim', ds_str)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    config_file = os.path.join('configs', f'{ds_str}.yaml')
+    logger.info(f'config file in use={config_file}')
+    with open(config_file) as f:
+        ds_params = yaml.safe_load(f)['DGP']
+
+    num_train, num_val, num_test = ds_params['num_train'], ds_params['num_val'], ds_params['num_test']
+    n_total = num_train + num_val + num_test
+    num_replicates = ds_params['num_replicas']
+    
+    dgp_str = ds_params['dgp_str']
+    
+    ## first take care of training data    
+    t0 = time.monotonic()
+    simulator = SimRegr(ds_params,seed=ds_params['seed'])
+    logger.info(f'simulating training data for dataset={ds_str} with {num_replicates} replicates')
+    training_data = simulator.generate_dataset(dgp_str, num_train, num_of_replicates=num_replicates)
+    logger.info('done generating meta training data')
+    for replica_id, (x,y,e) in enumerate(training_data['data_with_replica']):
+    
+        true_mean, true_var = training_data['ground_truth'][replica_id]
+        data_train = {'x': x, 'y': y, 'e': e, 'true_mean': true_mean, 'true_var': true_var}
+                            
+        filename = os.path.join(save_dir, f'{replica_id}_train.pickle')
+        with open(filename, 'wb') as handle:
+            pickle.dump(data_train, handle, protocol = pickle.HIGHEST_PROTOCOL)
+    logger.info(f'training data saved; time elapsed={time.monotonic()-t0:.4f}s')
+    
+    ## overwrite boundary extension in validation and test set
+    ## this is to ensure that we don't run into extrapolation issues
+    ds_params['boundary_extension'] = 0
+    
+    logger.info(f'simulating validation data for dataset={ds_str} with {num_replicates} replicates')
+    t0 = time.time()
+    simulator = SimRegr(ds_params,seed=ds_params['seed']+100)
+    validation_data = simulator.generate_dataset(dgp_str, num_val, num_of_replicates = num_replicates)
+    logger.info('done generating meta validation data')
+    
+    for replica_id, (x,y,e) in enumerate(validation_data['data_with_replica']):
+        true_mean, true_var = validation_data['ground_truth'][replica_id]
+        data_val = {'x': x, 'y': y, 'e': e, 'true_mean': true_mean, 'true_var': true_var}
+        
+        filename = os.path.join(save_dir, f'{replica_id}_val.pickle')
+        with open(filename, 'wb') as handle:
+            pickle.dump(data_val, handle, protocol = pickle.HIGHEST_PROTOCOL)
+    logger.info(f'validation data saved; time elapsed={time.monotonic()-t0:.4f}s')
+    
+    logger.info(f'simulating test data for dataset={ds_str} with {num_replicates} replicates')
+    t0 = time.monotonic()
+    simulator = SimRegr(ds_params,seed=ds_params['seed']+200)
+    testing_data = simulator.generate_dataset(dgp_str, num_test, num_of_replicates=num_replicates)
+    logger.info('done generating meta test data')
+    
+    for replica_id, (x,y,e) in enumerate(testing_data ['data_with_replica']):
+
+        true_mean, true_var = testing_data['ground_truth'][replica_id]
+        data_test = {'x': x, 'y': y, 'e': e, 'true_mean': true_mean, 'true_var': true_var}
+        
+        filename = os.path.join(save_dir, f'{replica_id}_test.pickle')
+        with open(filename, 'wb') as handle:
+            pickle.dump(data_test, handle, protocol = pickle.HIGHEST_PROTOCOL)
+    logger.info(f'test data saved; time elapsed={time.monotonic()-t0:.4f}s')
+    
+    if view_dataset:
+        simulator.view_dataset(data_test, save_file_as=os.path.join(save_dir,'sample_testset.png'))
+        logger.info('sample dataset plot saved')
+    
+    return 0
+    
+if __name__ == "__main__":
+    
+    logger.info(f'CWD={os.getcwd()}')
+    logger.info(f'python={".".join(map(str,sys.version_info[:3]))}')
+    main(auto_envvar_prefix='WEIGHTED_ERM')

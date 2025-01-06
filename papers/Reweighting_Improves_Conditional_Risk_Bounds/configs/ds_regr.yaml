@@ -1,0 +1,74 @@
+DGP:
+  dgp_str: 'quadraticVar'
+  description: 'features are generated from Unif[0,1], errors are Gaussian, noise variance is quadratic in x'
+  num_train: 50000
+  num_val: 5000
+  num_test: 2000
+  num_replicas: 10
+
+  xlow: 0
+  xhigh: 10
+  sigma: 0.3
+  xi_max: null
+  boundary_extend: 0.75
+  seed: 42
+
+dataloader:
+  batch_size: 64
+  shuffle: False
+  num_workers: 4
+
+mean_network_params:
+  module_type: 'FCResNet'
+  input_dim: 1
+  output_dim: 1
+  hidden_dims: [256, 256]
+  architect_type: 'concat'
+  dropout_rate: 0.1
+  activation: 'relu'
+  use_softplus: False
+  clip: False
+
+mean_loss_params:
+  loss_type: 'weightedMSE'
+  
+mean_network_train:
+  learning_rate: 0.0005
+  monitor: 'val_loss'
+  scheduler_type: 'ReduceLROnPlateau'
+  reduceLR_factor: 0.9
+  reduceLR_patience: 5
+  max_epochs: 100
+  es_patience: 10
+  limit_val_batches: 50
+  gradient_clip_val: 0.5
+
+var_network_params:
+  module_type: 'FCResNet'
+  input_dim: 1
+  output_dim: 1
+  hidden_dims: [256, 256]
+  architect_type: 'concat'
+  dropout_rate: 0.1
+  activation: 'elu'
+  use_softplus: True
+  clip: True
+  
+var_loss_params:
+  loss_type: 'sigmaNLL'
+  is_modeling_inverse: True
+
+var_network_train:
+  learning_rate: 0.0005
+  monitor: 'val_loss'
+  scheduler_type: 'ReduceLROnPlateau'
+  reduceLR_factor: 0.5
+  reduceLR_patience: 5
+  max_epochs: 100
+  es_patience: 10
+  limit_val_batches: 50
+  gradient_clip_val: 0.5
+  
+run_params:
+  reweight_iters: 2
+  load_from_ckpt: null
