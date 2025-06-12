@@ -1,0 +1,29 @@
+name: sb-fbsde
+channels:
+  - anaconda
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - numpy
+  - scipy
+  - termcolor
+  - easydict
+  - ipdb
+  - pytorch==1.8.1
+  - torchvision==0.9.1
+  - cudatoolkit=10.2
+  - tqdm
+  - scikit-learn
+  - pandas
+  - matplotlib
+  - tensorboard
+  - pip
+  - pip:
+    - prefetch_generator
+    - colored-traceback
+    - ml-collections==0.1.0
+    - pyyaml==5.4.1
+    - torch-ema
+    - gdown
