@@ -1,0 +1,39 @@
+# Example configuration file for Q language model training pipeline
+# Copy this file to config.yaml and modify as needed
+
+dataset:
+  # Directories for dataset processing stages
+  initial_dataset_dir: "initial_dataset"
+  validated_dataset_dir: "validated_dataset"
+  final_dataset_dir: "final_dataset"
+  
+  # Path to Q interpreter - can be absolute path or command name if in PATH
+  q_interpreter_path: "q"  # or "/path/to/q/interpreter"
+
+model:
+  # Base model to use (from HuggingFace or local path)
+  base_model: "Qwen/Qwen2.5-7B-Instruct"
+  
+  # Model training parameters
+  max_seq_length: 2048
+  learning_rate: 2.0e-5
+  batch_size: 1
+  gradient_accumulation_steps: 8
+  warmup_steps: 100
+  max_steps: 1000
+  save_steps: 50
+  
+  # LoRA parameters
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+
+# Output directories
+output_dir: "outputs"
+log_dir: "logs"
+
+# Note: API keys should be set via environment variables:
+# - OPENAI_API_KEY
+# - ANTHROPIC_API_KEY
+# - XAI_API_KEY
+# - GEMINI_API_KEY 
