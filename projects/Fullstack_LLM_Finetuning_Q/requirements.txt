@@ -1,0 +1,30 @@
+# Core dependencies
+torch>=2.0.0
+transformers>=4.36.0
+datasets>=2.14.0
+peft>=0.7.0
+accelerate>=0.25.0
+bitsandbytes>=0.41.0
+trl>=0.7.4
+vllm>=0.2.0
+
+# API clients
+openai>=1.0.0
+anthropic>=0.7.0
+google-generativeai>=0.3.0
+
+# Data processing
+numpy>=1.24.0
+pandas>=2.0.0
+tqdm>=4.65.0
+
+# Configuration and logging
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+wandb>=0.15.0
+
+# Development
+black>=23.0.0
+isort>=5.12.0
+pylint>=3.0.0
+pytest>=7.0.0 
