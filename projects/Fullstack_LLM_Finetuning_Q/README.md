@@ -243,13 +243,17 @@ Key configuration areas:
    - Check API keys for LLM services
    - Validate file permissions
 
+
 ## Contributing
 
 Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
+
 ## License
 
-This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
+This project is licensed under the Apache 2.0 License - see
+[LICENSE](LICENSE) for details.
+
 
 ## Citation
 
