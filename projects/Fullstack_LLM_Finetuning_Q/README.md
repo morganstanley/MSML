@@ -2,7 +2,7 @@
 
 > **Technical Report Implementation**: This repository contains the complete implementation for our technical report on adapting large language models to the Q programming language. Our work addresses the challenge of training LLMs for specialized programming languages that are under-represented on the Internet.
 
-> **📄 [Technical Report: Full-Stack Fine-Tuning for the Q Programming Language](LINK_TO_PAPER_PLACEHOLDER)** *(Coming Soon)*
+> **📄 [Technical Report: Full-Stack Fine-Tuning for the Q Programming Language](https://arxiv.org/abs/2508.06813)**
 
 ## About This Work
 
