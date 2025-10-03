@@ -1,0 +1,225 @@
+seml:
+  project_root_dir: ../../..
+  executable: seml/scripts/dp_train_standard_eval.py
+  conda_environment: timeseries_dp
+  output_dir: /ceph/hdd/staff/schuchaj/dp_timeseries/icml25/logs
+  name: std_train_std_eval
+
+slurm:
+  - experiments_per_job: 4
+    sbatch_options:
+      gres: gpu:1
+      mem: 16G          # memory
+      cpus-per-task: 5  # num cores
+      time: 01-12:00     # max time, D-HH:MM
+      partition: gpu_gtx_1080
+  - experiments_per_job: 12
+    sbatch_options:
+      gres: gpu:1
+      mem: 32G          # memory
+      cpus-per-task: 16  # num cores
+      time: 01-12:00     # max time, D-HH:MM
+      partition: gpu_a100
+  - experiments_per_job: 24
+    sbatch_options:
+      gres: gpu:1
+      mem: 64G          # memory
+      cpus-per-task: 48  # num cores
+      time: 01-12:00     # max time, D-HH:MM
+      partition: gpu_h100
+
+fixed:
+  save_dir: /ceph/hdd/staff/schuchaj/dp_timeseries/icml25/dp_train_standard_eval
+
+  use_wandb_logger: True
+  wandb_project_name: solar_10_minutes_dp_train_standard_eval
+
+  dataset_kwargs:
+    dataset_name: solar_10_minutes
+    dataset_dir: /ceph/hdd/shared/schuchaj_gluonts_datasets
+  
+  shuffle_buffer_length: null
+
+  estimator_kwargs:
+    lr: 1e-3
+    weight_decay: 1e-8
+    trainer_kwargs:
+      check_val_every_n_epoch: 10
+      check_val_pred_every_n_epoch: 10000
+      log_every_n_steps: 1
+  
+  neighboring_relation:
+    level: event
+    size: 1
+  
+  tight_privacy_loss: True
+
+grid:
+  estimator_kwargs.trainer_kwargs.max_epochs:
+    type: choice
+    options:
+      #- 2000
+      #- 4000
+      #- 8000
+      - 16000
+
+  seed:
+    type: choice
+    options:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+  
+  top_level_mode:
+    type: choice
+    options:
+      - shuffling
+      - sampling_without_replacement
+  
+  instances_per_sequence:
+    type: choice
+    options:
+      - 1
+      #- 2
+      #- 4
+  
+  estimator_kwargs.batch_size:
+    type: choice
+    options:
+      #- 16
+      #- 32
+      #- 64
+      - 128
+      #- 64
+  
+  dp_optimizer_kwargs.max_grad_norm:
+    type: choice
+    options:
+      #- 0.01
+      - 0.001
+      - 0.0001
+      #- 0.00001
+      #- 0.000001
+  
+  dp_optimizer_kwargs.noise_multiplier:
+    type: choice
+    options:
+      #- 0.1
+      #- 0.5
+      #- 1.0
+      - 2.0
+      - 4.0
+  
+  dp_accountant_kwargs.budget_epsilon:
+    type: choice
+    options:
+      - 0.25
+      - 0.5
+      - 1.0
+      - 2.0
+      - 4.0
+      - 8.0
+
+  
+  dp_accountant_kwargs.budget_delta:
+    type: choice
+    options:
+      #- 1e-6
+      - 1e-7
+      #- 1e-8
+      #- 1e-10
+
+simple_feed_forward:
+  fixed:
+    estimator_name: SimpleFeedForwardEstimator
+
+    estimator_kwargs:
+      hidden_dimensions: [64, 64]
+  
+  grid:
+    estimator_kwargs.relative_context_length:
+      type: choice
+      options:
+        #- 1
+        - 2
+        - 4
+        #- 8
+
+d_linear:
+  fixed:
+    estimator_name: DLinearEstimator
+
+    estimator_kwargs:
+      hidden_dimension: 20
+      kernel_size: 25
+
+  grid:
+    estimator_kwargs.relative_context_length:
+      type: choice
+      options:
+        #- 1
+        - 2
+        - 4
+        #- 8
+
+deepar:
+  fixed:
+    estimator_name: DeepAREstimator
+
+    estimator_kwargs:
+      num_layers: 2
+      hidden_size: 40
+      dropout_rate: 0.0
+      num_feat_dynamic_real: 0
+      num_feat_static_cat: 0
+      num_feat_static_real: 0
+      cardinality: null
+      embedding_dimension: null
+      scaling: True
+      default_scale: null
+      num_parallel_samples: 100
+      nonnegative_pred_samples: False
+  
+  grid:
+    estimator_kwargs.relative_context_length:
+      type: choice
+      options:
+        #- 1
+        - 2
+        - 4
+        #- 8
+    
+    estimator_kwargs.lags_seq:
+      type: choice
+      options: 
+        - [1, 2, 3, 4, 5, 6, 7, 23, 24, 25, 47, 48, 49, 71, 72, 73,
+           95, 96, 97, 119, 120, 121, 143, 144, 145, 167, 168, 169]
+        #- [1, 2, 3, 4, 5, 6, 7, 23, 24, 25]
+
+i_transformer:
+  fixed:
+    estimator_name: ITransformerEstimator
+
+    estimator_kwargs:
+      d_model: 32
+      nhead: 4
+      dim_feedforward: 128
+      dropout: 0.0
+      activation: relu
+      norm_first: False
+      num_encoder_layers: 2
+      scaling: mean
+      num_parallel_samples: 100
+      nonnegative_pred_samples: False
+      
+  
+  grid:
+    estimator_kwargs.relative_context_length:
+      type: choice
+      options:
+        #- 1
+        - 2
+        - 4
+        #- 8

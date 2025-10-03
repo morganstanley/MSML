@@ -1,0 +1,265 @@
+seml:
+  project_root_dir: ../../..
+  executable: seml/scripts/standard_train_dp_eval.py
+  conda_environment: timeseries_dp
+  output_dir: /ceph/hdd/staff/schuchaj/dp_timeseries/icml25/logs
+  name: std_train_dp_eval
+
+slurm:
+  - experiments_per_job: 1
+    sbatch_options:
+      gres: gpu:0
+      mem: 60G          # memory
+      cpus-per-task: 2  # num cores
+      time: 00-08:00     # max time, D-HH:MM
+      partition: cpu_all
+      qos: deadline
+  - experiments_per_job: 1
+    sbatch_options:
+      gres: gpu:0
+      mem: 60G          # memory
+      cpus-per-task: 2  # num cores
+      time: 00-08:00     # max time, D-HH:MM
+      partition: cpu_large
+      qos: deadline
+  #- experiments_per_job: 4
+  #  sbatch_options:
+  #    gres: gpu:1
+  #    mem: 128G          # memory
+  #    cpus-per-task: 5  # num cores
+  #    time: 00-01:00     # max time, D-HH:MM
+  #    partition: gpu_gtx_1080
+  #    qos: deadline
+  #- experiments_per_job: 4
+  #  sbatch_options:
+  #    gres: gpu:1
+  #    mem: 256G          # memory
+  #    cpus-per-task: 16  # num cores
+  #    time: 00-01:00     # max time, D-HH:MM
+  #    partition: gpu_a100
+  #    qos: deadline
+  #- experiments_per_job: 4
+  #  sbatch_options:
+  #    gres: gpu:1
+  #    mem: 256G          # memory
+  #    cpus-per-task: 16  # num cores
+  #    time: 00-01:00     # max time, D-HH:MM
+  #    partition: gpu_h100
+  #    qos: deadline
+
+fixed:
+  training_db_collection: dp_timeseries_standard_train_standard_eval
+
+  save_dir: /ceph/hdd/staff/schuchaj/dp_timeseries/icml25/standard_train_dp_eval
+
+  dataset_kwargs:
+    dataset_name: electricity
+    dataset_dir: /ceph/hdd/shared/schuchaj_gluonts_datasets
+  
+  shuffle_buffer_length: null
+
+  estimator_kwargs:
+    lr: 1e-3
+    weight_decay: 1e-8
+    trainer_kwargs:
+      check_val_every_n_epoch: 10
+      check_val_pred_every_n_epoch: 10000
+      log_every_n_steps: 1
+  
+  inference_kwargs:
+    neighboring_relation:
+      level: event
+      size: 1
+    subsample_transform_name: SubsamplePoisson
+    reset_observed_values_indicator: True
+
+grid:
+  inference_kwargs.subsample_transform_kwargs.subsampling_rate:
+    type: choice
+    options:
+      - 1.0
+      - 0.9
+      - 0.75
+      - 0.5
+  
+  inference_kwargs.imputation_transform_name:
+    type: choice
+    options:
+      - LastValueImputation
+      - MeanValueImputation
+      #- CausalMeanValueImputation
+      #- RollingMeanValueImputation
+    zip_id: imputation
+  
+  inference_kwargs.imputation_transform_kwargs:
+    type: choice
+    options:
+      - {}
+      - {}
+      #- {}
+      #- {window_size: 10}
+    zip_id: imputation
+
+  estimator_kwargs.trainer_kwargs.max_epochs:
+    type: choice
+    options:
+      #- 1000
+      #- 2000
+      #- 4000
+      - 8000
+
+  seed:
+    type: choice
+    options:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+    zip_id: seed_pairs
+  
+  training_seed:
+    type: choice
+    options:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+    zip_id: seed_pairs
+  
+  top_level_mode:
+    type: choice
+    options:
+      #- shuffling
+      - sampling_without_replacement
+  
+  instances_per_sequence:
+    type: choice
+    options:
+      - 1
+      #- 2
+      #- 4
+  
+  estimator_kwargs.batch_size:
+    type: choice
+    options:
+      - 64
+      #- 128
+  
+  inference_kwargs.neighboring_relation.target_sensitivity:
+    type: choice
+    options:
+      - 1.0
+      - 10
+      - 100
+  
+  inference_kwargs.budget_epsilon:
+    type: choice
+    options:
+      - 0.5
+      - 1
+      - 2
+      - 4
+      - 8
+  
+  inference_kwargs.budget_delta:
+    type: choice
+    options:
+      #- 0.1
+      #- 0.01
+      - 0.001
+      - 0.0001
+
+simple_feed_forward:
+  fixed:
+    estimator_name: SimpleFeedForwardEstimator
+
+    estimator_kwargs:
+      hidden_dimensions: [64, 64]
+  
+  grid:
+    estimator_kwargs.relative_context_length:
+      type: choice
+      options:
+        #- 1
+        - 2
+        #- 4
+        #- 8
+
+d_linear:
+  fixed:
+    estimator_name: DLinearEstimator
+
+    estimator_kwargs:
+      hidden_dimension: 20
+      kernel_size: 25
+
+  grid:
+    estimator_kwargs.relative_context_length:
+      type: choice
+      options:
+        #- 1
+        - 2
+        #- 4
+        #- 8
+
+deepar:
+  fixed:
+    estimator_name: DeepAREstimator
+
+    estimator_kwargs:
+      num_layers: 2
+      hidden_size: 40
+      dropout_rate: 0.0
+      num_feat_dynamic_real: 0
+      num_feat_static_cat: 0
+      num_feat_static_real: 0
+      cardinality: null
+      embedding_dimension: null
+      scaling: True
+      default_scale: null
+      num_parallel_samples: 100
+      nonnegative_pred_samples: False
+  
+  grid:
+    estimator_kwargs.relative_context_length:
+      type: choice
+      options:
+        #- 1
+        - 2
+        #- 4
+        #- 8
+    
+    estimator_kwargs.lags_seq:
+      type: choice
+      options: 
+        - [1, 2, 3, 4, 5, 6, 7, 23, 24, 25, 47, 48, 49, 71, 72, 73,
+           95, 96, 97, 119, 120, 121, 143, 144, 145, 167, 168, 169]
+        #- [1, 2, 3, 4, 5, 6, 7, 23, 24, 25]
+
+#i_transformer:
+#  fixed:
+#    estimator_name: ITransformerEstimator
+#
+#    estimator_kwargs:
+#      d_model: 32
+#      nhead: 4
+#      dim_feedforward: 128
+#      dropout: 0.0
+#      activation: relu
+#      norm_first: False
+#      num_encoder_layers: 2
+#      scaling: mean
+#      num_parallel_samples: 100
+#      nonnegative_pred_samples: False
+#      
+#  
+#  grid:
+#    estimator_kwargs.relative_context_length:
+#      type: choice
+#      options:
+#        #- 1
+#        - 2
+#        #- 4
+#        #- 8
