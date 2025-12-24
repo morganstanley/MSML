@@ -1,3 +1,5 @@
+![Lifecycle Active](https://img.shields.io/badge/Lifecycle-Active-brightgreen)
+
 # Morgan Stanley Machine Learning Research
 
 This respository contains code for papers and projects published by
