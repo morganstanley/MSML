@@ -1,0 +1,87 @@
+seml:
+  project_root_dir: ../../..
+  executable: seml/scripts/traditional_baselines_dp_eval.py
+  conda_environment: timeseries_dp
+  output_dir: /ceph/hdd/staff/schuchaj/dp_timeseries/icml25/logs
+  name: trad_baselines_std_eval
+
+slurm:
+  - experiments_per_job: 5
+    sbatch_options:
+      gres: gpu:0
+      mem: 256G          # memory
+      cpus-per-task: 20  # num cores
+      time: 07-00:00     # max time, D-HH:MM
+      partition: cpu_large
+      qos: deadline
+
+fixed:
+  save_dir: /ceph/hdd/staff/schuchaj/dp_timeseries/icml25/traditional_baselines_dp_eval
+
+  neighboring_relation:
+    level: event
+    size: 1
+
+grid:
+  seed:
+    type: choice
+    options:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+  
+  predictor_name:
+    type: choice
+    options:
+      - SeasonalNaivePredictor
+      - AutoETSPredictor
+      - AutoARIMAPredictor
+
+  budget_epsilon:
+    type: choice
+    options:
+      - 0.5
+      - 1
+      - 2
+      - 4
+      - 8
+  
+  budget_delta:
+    type: choice
+    options:
+      #- 0.1
+      #- 0.01
+      #- 0.001
+      - 0.0001
+  
+  use_season_length:
+    type: choice
+    options:
+      - True
+      - False
+
+electricity:
+  fixed:
+    dataset_kwargs:
+      dataset_name: electricity
+      dataset_dir: /ceph/hdd/shared/schuchaj_gluonts_datasets
+
+    neighboring_relation.target_sensitivity: 10.0
+
+traffic:
+  fixed:
+    dataset_kwargs:
+      dataset_name: traffic
+      dataset_dir: /ceph/hdd/shared/schuchaj_gluonts_datasets
+
+    neighboring_relation.target_sensitivity: 0.1
+
+solar_10_minutes:
+  fixed:
+    dataset_kwargs:
+      dataset_name: solar_10_minutes
+      dataset_dir: /ceph/hdd/shared/schuchaj_gluonts_datasets
+
+    neighboring_relation.target_sensitivity: 1.0

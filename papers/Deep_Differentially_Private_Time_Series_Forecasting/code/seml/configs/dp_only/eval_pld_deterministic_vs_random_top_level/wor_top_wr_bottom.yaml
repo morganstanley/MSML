@@ -1,0 +1,86 @@
+seml:
+  project_root_dir: ../../../..
+  executable: seml/scripts/eval_pld_accounting.py
+  conda_environment: timeseries_dp
+  output_dir: /ceph/hdd/staff/schuchaj/dp_timeseries/icml25/logs
+  name: eval_pld_accounting
+
+slurm:
+  - experiments_per_job: 1
+    sbatch_options:
+      gres: gpu:0
+      mem: 128G          # memory
+      cpus-per-task: 5  # num cores
+      time: 00-01:00     # max time, D-HH:MM
+      partition: cpu_all
+      qos: deadline
+  - experiments_per_job: 1
+    sbatch_options:
+      gres: gpu:0
+      mem: 128G          # memory
+      cpus-per-task: 5  # num cores
+      time: 00-01:00     # max time, D-HH:MM
+      partition: cpu_large
+      qos: deadline
+
+fixed:
+  save_dir: /ceph/hdd/staff/schuchaj/dp_timeseries/icml25/eval_pld_deterministic_vs_random_top_level
+
+  privacy_loss_kwargs:
+    num_sequences: 320
+    instances_per_sequence: 1
+    past_length: 1
+    future_length: 1
+    lead_time: 0
+    min_past: 0
+    min_future: 1
+    noise_multiplier: 1.0
+    tight_privacy_loss: False
+    lower_bound: True  # Coincides with tight bound for num_instances=1
+    future_target_noise_multiplier: 0.0
+    bottom_level_mode: sampling_with_replacement
+  
+  privacy_loss_kwargs.neighboring_relation:
+    level: event
+    size: 1
+  
+  epsilon_params:
+    space: logspace
+    start: -3.0
+    stop: 3.0
+    num: 20001
+  
+  num_compositions: null
+
+  value_discretization_interval: 1e-3
+  use_connect_dots: True
+
+grid:
+  privacy_loss_kwargs.top_level_mode:
+    type: choice
+    options:
+      - iteration
+      - sampling_without_replacement
+
+  privacy_loss_kwargs.min_sequence_length:
+    type: choice
+    options:
+      - 2  # rho = 1.0
+      - 4  # rho = 1 / 2
+      - 20  # rho = 1 / 10
+
+batch_size_32:  # 0.1 top-level, 10 iterations per epoch
+  fixed:
+    privacy_loss_kwargs.batch_size: 32
+    max_epochs: 10
+
+batch_size_160:  # 0.5 top-level, 2 iterations per epoch
+  fixed:
+    privacy_loss_kwargs.batch_size: 160
+    max_epochs: 50
+
+batch_size_320:  # 1.0 top-level, 1 iteration per epoch
+  fixed:
+    privacy_loss_kwargs.batch_size: 320
+    max_epochs: 100
+  
