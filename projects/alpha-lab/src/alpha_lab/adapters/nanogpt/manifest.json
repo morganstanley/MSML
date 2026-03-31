@@ -1,0 +1,21 @@
+{
+  "domain_name": "nanogpt",
+  "domain_description": "NanoGPT training speed optimization - minimize wall-clock time to target validation loss",
+  "phase2_framework_description": "training and evaluation framework",
+  "phase2_review_file": "review.md",
+  "metric": {
+    "primary_metric": "wall_clock_seconds",
+    "direction": "minimize",
+    "extract_key": "wall_clock_seconds",
+    "display_name": "Wall Clock Time (s)",
+    "secondary_metrics": ["val_loss", "tokens_per_second", "peak_memory_gb"]
+  },
+  "experiment": {
+    "required_files": ["train_config.py", "run_training.py"],
+    "entry_point": "run_training.py",
+    "results_dir": "results",
+    "results_file": "metrics.json",
+    "framework_dir": "training",
+    "framework_files": ["train.py", "model.py", "data.py", "metrics.py", "config.py"]
+  }
+}

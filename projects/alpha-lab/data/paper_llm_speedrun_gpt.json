@@ -1,0 +1,24 @@
+{
+  "data_path": "data/pleias-synth",
+  "description": "LLM pretraining quality speedrun: minimize validation bits-per-byte (val_bpb) on the PleIAs SYNTH corpus. Train a small language model from scratch within a fixed 20-minute wall-clock budget and a hard <100M trainable parameter constraint. The corpus is 500 parquet shards, ~155K rows each, ~32B tokens total. Each row has columns: synth_id, language, exercise, query, synthetic_reasoning, synthetic_answer, words. ~80% English. For training text, concatenate the 'synthetic_answer' (and optionally 'query') columns.",
+  "target": "Minimize val_bpb (validation bits-per-byte). Lower is better. Model must have <100M trainable parameters and training must complete within 20 minutes wall-clock.",
+  "domain": "llm_speedrun",
+  "provider": "openai",
+  "model": "gpt-5.2",
+  "reasoning_effort": "low",
+  "pipeline": {
+    "phases": ["phase1", "phase2", "phase3"],
+    "max_fix_iterations": 3,
+    "phase3": {
+      "executor": "local",
+      "max_experiments": 50,
+      "worker_count": 4,
+      "strategist_interval": 300,
+      "report_interval": 10,
+      "gpu_ids": [0, 1, 2, 3],
+      "max_per_gpu": 1,
+      "time_limit_seconds": 1800,
+      "python_executable": ""
+    }
+  }
+}

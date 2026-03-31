@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# uv
+uv.lock
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# Workspace (generated at runtime)
+workspace/
+workspace_demo/
+
+# Logs
+*.log
+events.jsonl
+
+# Generated data (keep download/generator scripts, not the output)
+test_data/*.csv
+test_data/*.parquet
+data/*.parquet
+# Keep the synthetic test data
+!data/exchange_rates.csv
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Secrets
+.env
+*.env
+!.env.example
+secrets.env
+
+# Generated corpus
+data/synth_corpus/
+
+# OS
+.DS_Store
+*.nfs*

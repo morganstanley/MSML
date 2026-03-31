@@ -1,0 +1,25 @@
+{
+  "data_path": "data/traffic",
+  "description": "Road occupancy rates from 862 sensors on San Francisco Bay Area freeways, measured hourly. GluonTS-format: train/data.json.gz and test/data.json.gz, each line is one JSON object with keys 'target' (array of hourly occupancy values), 'start' (timestamp), 'item_id', 'feat_static_cat'. 862 series, each ~14,036 hours (~17 months). Frequency: 1 hour. Prediction length: 24 hours. Values are already normalized to [0, 1] (occupancy ratios). Strong daily and weekly seasonality. Standard multivariate forecasting benchmark.",
+  "target": "Forecast hourly road occupancy 24 hours ahead for each sensor. Minimize RMSE as the primary metric. Also report MAE and MASE.",
+  "domain": "time_series",
+  "provider": "openai",
+  "model": "gpt-5.2",
+  "reasoning_effort": "low",
+  "pipeline": {
+    "phases": ["phase1", "phase2", "phase3"],
+    "max_fix_iterations": 3,
+    "phase3": {
+      "executor": "local",
+      "max_experiments": 50,
+      "worker_count": 4,
+      "strategist_interval": 300,
+      "report_interval": 10,
+      "gpu_ids": [0, 1, 2, 3],
+      "max_per_gpu": 1,
+      "time_limit_seconds": 21600,
+      "convergence_metric": "rmse",
+      "python_executable": ""
+    }
+  }
+}

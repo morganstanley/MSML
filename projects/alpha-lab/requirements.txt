@@ -1,0 +1,26 @@
+# Core dependencies
+openai>=1.82.0
+anthropic>=0.40.0
+httpx>=0.28.0
+rich>=14.0.0
+prompt-toolkit>=3.0.50
+tiktoken>=0.9.0
+pyyaml>=6.0
+pydantic>=2.0
+python-dotenv>=1.0.0
+
+# Web dashboard
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+watchfiles>=1.0.0
+
+# Data / ML (used by generated experiment code)
+numpy>=2.0.0
+pandas>=2.0.0
+scikit-learn>=1.5.0
+matplotlib>=3.9.0
+
+# PyTorch — install separately based on your hardware:
+#   CPU only:  pip install torch
+#   CUDA 12.6: pip install torch --index-url https://download.pytorch.org/whl/cu126
+#   See: https://pytorch.org/get-started/locally/

@@ -50,6 +50,7 @@ See also: https://www.morganstanley.com/about-us/technology/machine-learning-res
 | Name | Description | Links |
 | ---- | ----------- | ----- |
 | qqWen | [Qwen-2.5 series models finetuned for the Q programming language](https://arxiv.org/abs/2508.06813) | [HuggingFace](https://huggingface.co/collections/morganstanley/qqwen-series-688e4266bc727e7a3143aacf),[code](projects/Fullstack_LLM_Finetuning_Q) |
+| AlphaLab | Autonomous multi-agent research system across optimization domains with frontier LLMs | [code](projects/alpha-lab) |
 
 
 ## Contact
