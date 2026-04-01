@@ -74,6 +74,13 @@ def load_adapter(adapter_dir: str | Path) -> DomainAdapter:
         if prompt_file.exists():
             prompts[key] = prompt_file.read_text()
 
+    # Validate that all required prompts are present
+    missing_keys = [key for key in PROMPT_KEYS if key not in prompts]
+    if missing_keys:
+        missing_files = ", ".join(f"{key}.md" for key in missing_keys)
+        raise FileNotFoundError(
+            f"Missing prompt files in adapter directory {adapter_dir}: {missing_files}"
+        )
     # Load domain knowledge
     domain_knowledge = ""
     dk_path = adapter_dir / "domain_knowledge.md"
