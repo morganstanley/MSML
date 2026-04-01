@@ -29,12 +29,12 @@ try:
 except Exception:
     import logging as _logging
     _logging.getLogger("alpha_lab.context").warning(
-        "tiktoken unavailable, using character-based token estimation (~3x less accurate)"
+        "tiktoken unavailable, using approximate character-based token estimation (~3.5 chars/token)"
     )
     # Offline fallback: ~3.5 characters per token on average
     def count_tokens(text: str) -> int:
         """Estimate token count for a string (character-based fallback)."""
-        return len(text) // 3
+        return int(len(text) / 3.5)
 
 
 # ---------------------------------------------------------------------------
