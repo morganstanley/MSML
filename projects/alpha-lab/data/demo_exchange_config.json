@@ -1,0 +1,24 @@
+{
+  "data_path": "data/exchange_rates.csv",
+  "description": "SYNTHETIC daily exchange rates for 8 countries against the US dollar, from 1990 to 2010 (~61k rows). Generated using Ornstein-Uhlenbeck process with mean reversion, volatility clustering, and seasonal patterns. Columns: date, country, exchange_rate, interest_rate_diff, inflation_diff, trade_balance, volatility_index.",
+  "target": "Forecast exchange_rate for each country. Interested in both short-term (a few days out) and longer-term (a few weeks to a couple months). Curious which countries are more predictable than others and whether the exogenous features help.",
+  "provider": "openai",
+  "model": "gpt-5.2",
+  "reasoning_effort": "low",
+  "domain": "",
+  "pipeline": {
+    "phases": ["phase1", "phase2", "phase3"],
+    "max_fix_iterations": 3,
+    "phase3": {
+      "executor": "local",
+      "max_experiments": 10,
+      "worker_count": 4,
+      "strategist_interval": 300,
+      "report_interval": 5,
+      "gpu_ids": [0, 1, 2, 3],
+      "max_per_gpu": 1,
+      "time_limit_seconds": 3600,
+      "python_executable": ""
+    }
+  }
+}

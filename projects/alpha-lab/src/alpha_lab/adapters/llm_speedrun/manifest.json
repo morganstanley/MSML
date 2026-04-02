@@ -1,0 +1,21 @@
+{
+  "domain_name": "llm_speedrun",
+  "domain_description": "LLM pretraining quality optimization — minimize val_bpb within fixed wall-clock budget and parameter count constraint",
+  "phase2_framework_description": "experiment harness for running modified train.py files with time budgets, parameter counting, and val_bpb extraction",
+  "phase2_review_file": "review.md",
+  "metric": {
+    "primary_metric": "val_bpb",
+    "direction": "minimize",
+    "extract_key": "val_bpb",
+    "display_name": "Val BPB (bits per byte)",
+    "secondary_metrics": ["train_loss", "tokens_per_sec", "mfu", "param_count", "peak_memory_gb", "wall_clock_seconds"]
+  },
+  "experiment": {
+    "required_files": ["train.py", "run_experiment.py"],
+    "entry_point": "run_experiment.py",
+    "results_dir": "results",
+    "results_file": "metrics.json",
+    "framework_dir": "harness",
+    "framework_files": ["runner.py", "metrics.py", "data_prep.py", "config.py", "baseline_train.py"]
+  }
+}

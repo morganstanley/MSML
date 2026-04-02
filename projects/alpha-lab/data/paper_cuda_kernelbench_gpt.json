@@ -1,0 +1,24 @@
+{
+  "data_path": "data/kernelbench",
+  "description": "KernelBench CUDA kernel optimization benchmark. Each task provides a reference PyTorch operation and a baseline CUDA kernel. The goal is to write optimized CUDA kernels that match the reference output while maximizing throughput (GFLOPS). Tasks range from simple element-wise ops to complex fused attention kernels.",
+  "target": "Maximize throughput_gflops for each kernel task. Higher is better. Kernels must produce numerically correct output matching the PyTorch reference within tolerance.",
+  "domain": "cuda_kernel",
+  "provider": "openai",
+  "model": "gpt-5.2",
+  "reasoning_effort": "low",
+  "pipeline": {
+    "phases": ["phase1", "phase2", "phase3"],
+    "max_fix_iterations": 3,
+    "phase3": {
+      "executor": "local",
+      "max_experiments": 50,
+      "worker_count": 4,
+      "strategist_interval": 300,
+      "report_interval": 10,
+      "gpu_ids": [0, 1, 2, 3],
+      "max_per_gpu": 1,
+      "time_limit_seconds": 3600,
+      "python_executable": ""
+    }
+  }
+}

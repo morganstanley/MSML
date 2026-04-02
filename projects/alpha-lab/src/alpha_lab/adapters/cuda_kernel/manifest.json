@@ -1,0 +1,21 @@
+{
+  "domain_name": "cuda_kernel",
+  "domain_description": "KernelBench CUDA kernel generation — generate optimized CUDA kernels from PyTorch operator specifications, maximizing speedup over PyTorch native while maintaining correctness",
+  "phase2_framework_description": "evaluation harness for compiling CUDA kernels via torch load_inline, checking correctness against PyTorch reference, and measuring runtime speedup",
+  "phase2_review_file": "review.md",
+  "metric": {
+    "primary_metric": "speedup_native",
+    "direction": "maximize",
+    "extract_key": "speedup_native",
+    "display_name": "Speedup vs PyTorch Native",
+    "secondary_metrics": ["speedup_compile", "correct", "runtime_ms", "pytorch_native_ms", "max_diff"]
+  },
+  "experiment": {
+    "required_files": ["kernel.cu", "run_experiment.py"],
+    "entry_point": "run_experiment.py",
+    "results_dir": "results",
+    "results_file": "metrics.json",
+    "framework_dir": "harness",
+    "framework_files": ["evaluate.py", "task_loader.py"]
+  }
+}
