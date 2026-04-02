@@ -1,0 +1,8 @@
+{"t": 1775154458.3569386, "action": "dispatcher_start", "max_experiments": 10, "worker_count": 2, "report_interval": 5}
+{"type": "phase", "timestamp": 1775154458.3569825, "phase": "phase3", "step": "dispatcher", "iteration": 0, "status": "starting", "detail": "Phase 3 experiment loop starting"}
+{"t": 1775154458.5646513, "action": "recovery", "released_workers": 0, "slurm_reconciled": 0}
+{"t": 1775154458.5648546, "action": "strategist_start"}
+{"type": "experiment", "timestamp": 1775154458.564872, "experiment_id": 0, "name": "strategist", "status": "running", "prev_status": "", "detail": "Strategist proposing experiments", "worker_id": "", "slurm_job_id": "", "metrics": {}}
+{"type": "board_summary", "timestamp": 1775154459.0573921, "counts": {}, "experiments": [], "leaderboard": []}
+{"t": 1775154465.223309, "action": "strategist_done"}
+{"type": "board_summary", "timestamp": 1775154469.8984728, "counts": {}, "experiments": [], "leaderboard": []}

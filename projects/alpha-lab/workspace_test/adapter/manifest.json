@@ -1,0 +1,21 @@
+{
+  "domain_name": "time_series",
+  "domain_description": "Time series prediction and forecasting for financial data",
+  "phase2_framework_description": "walk-forward backtesting framework",
+  "phase2_review_file": "review.md",
+  "metric": {
+    "primary_metric": "sharpe",
+    "direction": "maximize",
+    "extract_key": "sharpe",
+    "display_name": "Sharpe Ratio",
+    "secondary_metrics": ["max_drawdown", "mae", "rmse"]
+  },
+  "experiment": {
+    "required_files": ["strategy.py", "run_experiment.py"],
+    "entry_point": "run_experiment.py",
+    "results_dir": "results",
+    "results_file": "metrics.json",
+    "framework_dir": "backtest",
+    "framework_files": ["strategy.py", "engine.py", "metrics.py", "baselines.py", "run_backtest.py"]
+  }
+}
