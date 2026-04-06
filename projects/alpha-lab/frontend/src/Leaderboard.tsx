@@ -14,16 +14,19 @@ interface Props {
 
 export default function Leaderboard({ events }: Props) {
   const [entries, setEntries] = useState<LeaderEntry[]>([]);
-  const [sortKey, setSortKey] = useState("sharpe");
+  const [sortKey, setSortKey] = useState("");
+  const [direction, setDirection] = useState("maximize");
 
   const fetchLeaderboard = useCallback(() => {
     fetch("/api/leaderboard")
       .then((r) => r.json())
       .then((data) => {
         if (data.leaderboard) setEntries(data.leaderboard);
+        if (data.metric && !sortKey) setSortKey(data.metric);
+        if (data.direction) setDirection(data.direction);
       })
       .catch(() => {});
-  }, []);
+  }, [sortKey]);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -39,10 +42,11 @@ export default function Leaderboard({ events }: Props) {
     }
   }, [events, fetchLeaderboard]);
 
+  const effectiveKey = sortKey || "sharpe";
   const sorted = [...entries].sort((a, b) => {
-    const av = a.metrics[sortKey] ?? -Infinity;
-    const bv = b.metrics[sortKey] ?? -Infinity;
-    return bv - av;
+    const av = a.metrics[effectiveKey] ?? -Infinity;
+    const bv = b.metrics[effectiveKey] ?? -Infinity;
+    return direction === "maximize" ? bv - av : av - bv;
   });
 
   const metricKeys = Array.from(
@@ -67,7 +71,7 @@ export default function Leaderboard({ events }: Props) {
             {metricKeys.map((key) => (
               <th
                 key={key}
-                className={`leaderboard-sortable ${sortKey === key ? "leaderboard-active-sort" : ""}`}
+                className={`leaderboard-sortable ${effectiveKey === key ? "leaderboard-active-sort" : ""}`}
                 onClick={() => setSortKey(key)}
               >
                 {key}

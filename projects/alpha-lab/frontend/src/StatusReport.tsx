@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { AgentEvent } from "./useWebSocket";
 
+interface MetricConfig {
+  primary_metric: string;
+  direction: string;
+  display_name: string;
+}
+
 interface StatusData {
   generated_at?: number;
+  metric_config?: MetricConfig;
   problem?: {
     summary?: string;
     exploration_available?: boolean;
@@ -13,39 +20,24 @@ interface StatusData {
     horizons?: number[];
     strategies?: string[];
     countries?: string[];
-    best_per_horizon?: {
-      horizon: number | null;
-      strategy: string;
-      country: string;
-      sharpe: number;
-      mae: number | null;
-    }[];
-    avg_sharpe_by_strategy?: Record<string, number>;
+    best_per_horizon?: Record<string, any>[];
+    avg_primary_by_strategy?: Record<string, number>;
   };
   experiments?: {
     available?: boolean;
     board?: Record<string, number>;
     total?: number;
-    top_models?: {
-      name: string;
-      status: string;
-      sharpe: number | null;
-      mae: number | null;
-      max_dd: number | null;
-      total_return: number | null;
-    }[];
+    top_models?: Record<string, any>[];
     all_scored_count?: number;
     failures?: { name: string; error: string }[];
     running_slurm?: { name: string; slurm_job_id: string }[];
   };
   comparison?: {
     name: string;
-    model_sharpe: number;
-    model_mae: number | null;
-    best_baseline_sharpe: number;
-    avg_baseline_sharpe: number;
+    model_primary: number;
+    best_baseline: number;
+    avg_baseline: number;
     beats_best_baseline: boolean;
-    beats_avg_baseline: boolean;
   }[];
 }
 
@@ -107,6 +99,10 @@ export default function StatusReport({ events, sendMessage }: Props) {
     fetchReport();
   };
 
+  const mc = data?.metric_config;
+  const primaryMetric = mc?.primary_metric ?? "sharpe";
+  const displayName = mc?.display_name ?? "Sharpe";
+  const metricDirection = mc?.direction ?? "maximize";
   const board = data?.experiments?.board;
   const topModels = data?.experiments?.top_models ?? [];
   const comparisons = data?.comparison ?? [];
@@ -171,26 +167,33 @@ export default function StatusReport({ events, sendMessage }: Props) {
             <section className="sr-section">
               <h3 className="sr-section-title">Baselines</h3>
               <div className="sr-meta-row">
-                <span>{baselines.countries?.length ?? 0} countries</span>
-                <span>{baselines.strategies?.length ?? 0} strategies</span>
-                <span>{baselines.horizons?.map((h) => `h=${h}`).join(", ")}</span>
+                {baselines.countries && baselines.countries.length > 0 && (
+                  <span>{baselines.countries.length} countries</span>
+                )}
+                {baselines.strategies && baselines.strategies.length > 0 && (
+                  <span>{baselines.strategies.length} strategies</span>
+                )}
+                {baselines.horizons && baselines.horizons.length > 0 && (
+                  <span>{baselines.horizons.map((h) => `h=${h}`).join(", ")}</span>
+                )}
+                <span>{baselines.total_rows ?? 0} total rows</span>
               </div>
 
-              {baselines.avg_sharpe_by_strategy && (
+              {baselines.avg_primary_by_strategy && (
                 <table className="sr-table">
                   <thead>
                     <tr>
                       <th>Strategy</th>
-                      <th>Avg Sharpe</th>
+                      <th>Avg {displayName}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(baselines.avg_sharpe_by_strategy)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([strat, sharpe]) => (
+                    {Object.entries(baselines.avg_primary_by_strategy)
+                      .sort((a, b) => metricDirection === "maximize" ? b[1] - a[1] : a[1] - b[1])
+                      .map(([strat, val]) => (
                         <tr key={strat}>
                           <td>{strat}</td>
-                          <td className="sr-metric">{fmt(sharpe)}</td>
+                          <td className="sr-metric">{fmt(val)}</td>
                         </tr>
                       ))}
                   </tbody>
@@ -203,21 +206,19 @@ export default function StatusReport({ events, sendMessage }: Props) {
                   <table className="sr-table">
                     <thead>
                       <tr>
-                        <th>Horizon</th>
-                        <th>Strategy</th>
-                        <th>Country</th>
-                        <th>Sharpe</th>
-                        <th>MAE</th>
+                        {Object.keys(baselines.best_per_horizon[0]).map((k) => (
+                          <th key={k}>{k === primaryMetric ? displayName : k}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {baselines.best_per_horizon.map((b) => (
-                        <tr key={b.horizon}>
-                          <td>h={b.horizon}</td>
-                          <td>{b.strategy}</td>
-                          <td>{b.country}</td>
-                          <td className="sr-metric">{fmt(b.sharpe)}</td>
-                          <td className="sr-metric">{fmt(b.mae)}</td>
+                      {baselines.best_per_horizon.map((b, i) => (
+                        <tr key={i}>
+                          {Object.entries(b).map(([k, v]) => (
+                            <td key={k} className={typeof v === "number" ? "sr-metric" : ""}>
+                              {typeof v === "number" ? fmt(v) : String(v ?? "\u2014")}
+                            </td>
+                          ))}
                         </tr>
                       ))}
                     </tbody>
@@ -236,8 +237,7 @@ export default function StatusReport({ events, sendMessage }: Props) {
                   <tr>
                     <th>#</th>
                     <th>Model</th>
-                    <th>Sharpe</th>
-                    <th>MAE</th>
+                    <th>{displayName}</th>
                     <th>Best Baseline</th>
                     <th>Beats Best?</th>
                   </tr>
@@ -247,9 +247,8 @@ export default function StatusReport({ events, sendMessage }: Props) {
                     <tr key={c.name}>
                       <td className="sr-rank">{i + 1}</td>
                       <td className="sr-model-name">{c.name}</td>
-                      <td className="sr-metric">{fmt(c.model_sharpe)}</td>
-                      <td className="sr-metric">{fmt(c.model_mae)}</td>
-                      <td className="sr-metric">{fmt(c.best_baseline_sharpe)}</td>
+                      <td className="sr-metric">{fmt(c.model_primary)}</td>
+                      <td className="sr-metric">{fmt(c.best_baseline)}</td>
                       <td>
                         <span className={c.beats_best_baseline ? "sr-beats-yes" : "sr-beats-no"}>
                           {c.beats_best_baseline ? "YES" : "no"}
@@ -263,42 +262,51 @@ export default function StatusReport({ events, sendMessage }: Props) {
           )}
 
           {/* Full Leaderboard */}
-          {topModels.length > 0 && (
-            <section className="sr-section">
-              <h3 className="sr-section-title">
-                Top {topModels.length} Models
-                {data.experiments?.all_scored_count
-                  ? ` (of ${data.experiments.all_scored_count} scored)`
-                  : ""}
-              </h3>
-              <table className="sr-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Name</th>
-                    <th>Sharpe</th>
-                    <th>MAE</th>
-                    <th>Max DD</th>
-                    <th>Return</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topModels.map((m, i) => (
-                    <tr key={m.name}>
-                      <td className="sr-rank">{i + 1}</td>
-                      <td className="sr-model-name">{m.name}</td>
-                      <td className="sr-metric">{fmt(m.sharpe)}</td>
-                      <td className="sr-metric">{fmt(m.mae)}</td>
-                      <td className="sr-metric">{fmt(m.max_dd)}</td>
-                      <td className="sr-metric">{fmt(m.total_return)}</td>
-                      <td className="sr-status-cell">{m.status}</td>
+          {topModels.length > 0 && (() => {
+            const skipKeys = new Set(["name", "status", "primary_metric", "slurm_job_id"]);
+            const metricKeys = Object.keys(topModels[0]).filter((k) => !skipKeys.has(k));
+            // Put primary metric first
+            metricKeys.sort((a, b) => {
+              if (a === primaryMetric) return -1;
+              if (b === primaryMetric) return 1;
+              return 0;
+            });
+
+            return (
+              <section className="sr-section">
+                <h3 className="sr-section-title">
+                  Top {topModels.length} Models
+                  {data.experiments?.all_scored_count
+                    ? ` (of ${data.experiments.all_scored_count} scored)`
+                    : ""}
+                </h3>
+                <table className="sr-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Name</th>
+                      {metricKeys.map((k) => (
+                        <th key={k}>{k === primaryMetric ? displayName : k}</th>
+                      ))}
+                      <th>Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          )}
+                  </thead>
+                  <tbody>
+                    {topModels.map((m, i) => (
+                      <tr key={m.name}>
+                        <td className="sr-rank">{i + 1}</td>
+                        <td className="sr-model-name">{m.name}</td>
+                        {metricKeys.map((k) => (
+                          <td key={k} className="sr-metric">{fmt(m[k])}</td>
+                        ))}
+                        <td className="sr-status-cell">{m.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            );
+          })()}
 
           {/* Failures */}
           {data.experiments?.failures && data.experiments.failures.length > 0 && (

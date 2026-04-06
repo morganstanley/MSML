@@ -320,7 +320,7 @@ async def _generate_and_broadcast_status() -> None:
         return
     try:
         from alpha_lab.output_generator import OutputGenerator
-        gen = OutputGenerator(_workspace)
+        gen = OutputGenerator(_workspace, adapter=_adapter_cache.get("adapter"))
         report = gen.generate_status_report()
         data = {"type": "status_report", "timestamp": time.time(), **report}
         event_history.append(data)
@@ -651,7 +651,7 @@ async def get_status_report() -> JSONResponse:
         return JSONResponse({"error": "No workspace"}, status_code=400)
     try:
         from alpha_lab.output_generator import OutputGenerator
-        gen = OutputGenerator(_workspace)
+        gen = OutputGenerator(_workspace, adapter=_adapter_cache.get("adapter"))
         report = gen.generate_status_report()
         return JSONResponse(report)
     except Exception as e:
@@ -669,8 +669,13 @@ async def get_leaderboard() -> JSONResponse:
 
     # Use adapter metric if available
     _metric = "sharpe"
-    if _adapter_cache.get("adapter") is not None:
-        _metric = _adapter_cache["adapter"].metric.primary_metric
+    _direction = "maximize"
+    _display_name = "Sharpe"
+    _adapter = _adapter_cache.get("adapter")
+    if _adapter is not None:
+        _metric = _adapter.metric.primary_metric
+        _direction = _adapter.metric.direction
+        _display_name = _adapter.metric.display_name
 
     leaders = manager.db.leaderboard(_metric, 20)
 
@@ -684,6 +689,8 @@ async def get_leaderboard() -> JSONResponse:
 
     return JSONResponse({
         "metric": _metric,
+        "direction": _direction,
+        "display_name": _display_name,
         "leaderboard": [
             {
                 "id": exp.id,
