@@ -324,7 +324,14 @@ class OutputGenerator:
 
     def _looks_like_metrics(self, columns: set[str]) -> bool:
         """Return True if *columns* look like baseline metrics output."""
-        # Require country + strategy + at least 2 numeric metric columns
+        # If adapter is available, check for its primary/secondary metrics
+        if self.adapter is not None:
+            known = {self.adapter.metric.primary_metric} | set(
+                self.adapter.metric.secondary_metrics
+            )
+            if known & columns:
+                return True
+        # Fallback heuristic for time_series (no adapter)
         has_keys = {"country", "strategy"}.issubset(columns)
         metric_hits = columns & {
             "mae", "rmse", "r2", "sharpe", "sharpe_next_day",
@@ -628,6 +635,20 @@ class OutputGenerator:
         """
         report: dict[str, Any] = {}
 
+        # --- Metric config (from adapter) ---
+        _primary = "sharpe"
+        _direction = "maximize"
+        _display_name = "Sharpe"
+        if self.adapter is not None:
+            _primary = self.adapter.metric.primary_metric
+            _direction = self.adapter.metric.direction
+            _display_name = self.adapter.metric.display_name
+        report["metric_config"] = {
+            "primary_metric": _primary,
+            "direction": _direction,
+            "display_name": _display_name,
+        }
+
         # --- Problem description (from data_report) ---
         findings = self._read("data_report/findings.md")
         schema = self._read("data_report/schema.md")
@@ -674,46 +695,56 @@ class OutputGenerator:
             countries = sorted(set(r.get("country", "") for r in rows))
             baselines["countries"] = countries
 
-            # Best baseline per horizon (by Sharpe)
-            sharpe_keys = ["sharpe", "sharpe_next_day"]
+            # Best baseline per horizon (by primary metric)
+            primary_keys = [_primary]
+            _better = (lambda a, b: a > b) if _direction == "maximize" else (lambda a, b: a < b)
+            _worst = -999.0 if _direction == "maximize" else 999.0
             best_per_horizon: list[dict[str, Any]] = []
             for h in (horizons or [None]):
                 h_rows = [r for r in rows if (h is None or str(r.get("horizon")) == str(h))]
                 if not h_rows:
                     continue
                 best_row = None
-                best_sharpe = -999.0
+                best_val = _worst
                 for r in h_rows:
-                    s = self._get_metric(r, sharpe_keys)
+                    s = self._get_metric(r, primary_keys)
                     try:
                         sv = float(s)
-                        if sv > best_sharpe:
-                            best_sharpe = sv
+                        if _better(sv, best_val):
+                            best_val = sv
                             best_row = r
                     except (ValueError, TypeError):
                         continue
                 if best_row:
-                    best_per_horizon.append({
-                        "horizon": h,
-                        "strategy": best_row.get("strategy", "?"),
-                        "country": best_row.get("country", "?"),
-                        "sharpe": round(best_sharpe, 4),
-                        "mae": self._safe_float(self._get_metric(best_row, ["mae"])),
-                    })
+                    entry: dict[str, Any] = {}
+                    if h is not None:
+                        entry["horizon"] = h
+                    if best_row.get("strategy"):
+                        entry["strategy"] = best_row["strategy"]
+                    if best_row.get("country"):
+                        entry["country"] = best_row["country"]
+                    entry[_primary] = round(best_val, 4)
+                    # Include other numeric values from the row
+                    for k, v in best_row.items():
+                        if k not in entry and k not in ("horizon", "strategy", "country"):
+                            fv = self._safe_float(v)
+                            if fv is not None:
+                                entry[k] = fv
+                    best_per_horizon.append(entry)
             baselines["best_per_horizon"] = best_per_horizon
 
-            # Average sharpe per strategy across all rows
-            strat_sharpes: dict[str, list[float]] = {}
+            # Average primary metric per strategy across all rows
+            strat_values: dict[str, list[float]] = {}
             for r in rows:
                 strat = r.get("strategy", "?")
-                s = self._get_metric(r, sharpe_keys)
+                s = self._get_metric(r, primary_keys)
                 try:
-                    strat_sharpes.setdefault(strat, []).append(float(s))
+                    strat_values.setdefault(strat, []).append(float(s))
                 except (ValueError, TypeError):
                     pass
-            baselines["avg_sharpe_by_strategy"] = {
+            baselines["avg_primary_by_strategy"] = {
                 s: round(sum(vals) / len(vals), 4)
-                for s, vals in strat_sharpes.items() if vals
+                for s, vals in strat_values.items() if vals
             }
 
         report["baselines"] = baselines
@@ -730,12 +761,7 @@ class OutputGenerator:
 
                 all_exps = db.list_all()
 
-                # Top models by primary metric
-                _primary = "sharpe"
-                _direction = "maximize"
-                if self.adapter is not None:
-                    _primary = self.adapter.metric.primary_metric
-                    _direction = self.adapter.metric.direction
+                # Top models by primary metric (uses _primary/_direction from top)
 
                 scored: list[dict[str, Any]] = []
                 for exp in all_exps:
@@ -807,30 +833,34 @@ class OutputGenerator:
         # --- Comparison: top models vs baselines ---
         comparison: list[dict[str, Any]] = []
         if rows and experiments.get("top_models"):
-            # Get best baseline sharpe overall (across all countries/horizons)
-            all_baseline_sharpes = []
+            all_baseline_vals = []
             for r in rows:
-                s = self._get_metric(r, ["sharpe", "sharpe_next_day"])
+                s = self._get_metric(r, [_primary])
                 try:
-                    all_baseline_sharpes.append(float(s))
+                    all_baseline_vals.append(float(s))
                 except (ValueError, TypeError):
                     pass
-            best_baseline_sharpe = max(all_baseline_sharpes) if all_baseline_sharpes else 0
-            avg_baseline_sharpe = (
-                sum(all_baseline_sharpes) / len(all_baseline_sharpes)
-                if all_baseline_sharpes else 0
-            )
+
+            if all_baseline_vals:
+                best_baseline = (max if _direction == "maximize" else min)(all_baseline_vals)
+                avg_baseline = sum(all_baseline_vals) / len(all_baseline_vals)
+            else:
+                best_baseline = 0
+                avg_baseline = 0
 
             for model in experiments["top_models"][:5]:
-                if model["sharpe"] is not None:
+                model_val = model.get(_primary)
+                if model_val is not None:
+                    if _direction == "maximize":
+                        beats = model_val > best_baseline
+                    else:
+                        beats = model_val < best_baseline
                     comparison.append({
                         "name": model["name"],
-                        "model_sharpe": model["sharpe"],
-                        "model_mae": model["mae"],
-                        "best_baseline_sharpe": round(best_baseline_sharpe, 4),
-                        "avg_baseline_sharpe": round(avg_baseline_sharpe, 4),
-                        "beats_best_baseline": model["sharpe"] > best_baseline_sharpe,
-                        "beats_avg_baseline": model["sharpe"] > avg_baseline_sharpe,
+                        "model_primary": model_val,
+                        "best_baseline": round(best_baseline, 4),
+                        "avg_baseline": round(avg_baseline, 4),
+                        "beats_best_baseline": beats,
                     })
 
         report["comparison"] = comparison
