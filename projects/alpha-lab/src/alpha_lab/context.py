@@ -72,8 +72,10 @@ def load_learnings(workspace: str) -> str | None:
     return None
 
 
-def summarize_learnings(provider: Any, learnings: str, model: str = "gpt-4o-mini") -> str:
+def summarize_learnings(provider: Any, learnings: str, model: str = "") -> str:
     """Summarize learnings.md if it's gotten too long."""
+    if not model:
+        raise ValueError("model must be specified for summarize_learnings")
     try:
         return provider.complete(
             model=model,
@@ -158,12 +160,12 @@ class ContextManager:
             text_parts.append(f"[{entry.role}]: {entry.content}")
         text_to_summarize = "\n\n".join(text_parts)
 
-        # Summarize with a small model
+        # Summarize using the same model as the main agent
         summarization_ok = False
         agent_desc = self.domain_description or "quant research"
         try:
             self.summary = self.provider.complete(
-                model="gpt-4o-mini",
+                model=self.model,
                 system=(
                     f"Summarize this conversation between a {agent_desc} "
                     "agent and a user. Preserve: key findings, data "
@@ -201,7 +203,7 @@ class ContextManager:
 
         token_count = count_tokens(learnings)
         if token_count > LEARNINGS_SUMMARY_THRESHOLD:
-            learnings = summarize_learnings(self.provider, learnings)
+            learnings = summarize_learnings(self.provider, learnings, model=self.model)
             # Write summarized version back
             path = Path(self.workspace) / "learnings.md"
             path.write_text(learnings)

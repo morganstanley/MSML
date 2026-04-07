@@ -271,6 +271,9 @@ class AgentLoop:
         if self.context.should_summarize():
             self.emit(StatusEvent(status="thinking", detail="Summarizing context..."))
             self.context.summarize_and_fork()
+            # Clear the actual API history — the summary is injected into
+            # the system prompt, so old messages no longer need to be sent.
+            self._input_history.clear()
 
         input_items = self.provider.build_user_items(message)
         self._run_loop(input_items)
