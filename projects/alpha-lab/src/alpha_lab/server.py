@@ -7,7 +7,6 @@ running or completed analysis.  The pipeline is started separately via
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import json
 import logging
@@ -18,10 +17,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+import click
+
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from alpha_lab.adapter_loader import resolve_adapter
 from alpha_lab.events import AgentEvent, FileChangedEvent
 from alpha_lab.metrics import MetricsCollector
 
@@ -257,7 +259,6 @@ async def startup() -> None:
     # Try to load adapter for metric-aware endpoints
     if _workspace:
         try:
-            from alpha_lab.adapter_loader import resolve_adapter
             _adapter_cache["adapter"] = resolve_adapter(_workspace)
         except Exception as e:
             logger.warning(f"Failed to load adapter at startup: {e}")
@@ -320,7 +321,7 @@ async def _generate_and_broadcast_status() -> None:
         return
     try:
         from alpha_lab.output_generator import OutputGenerator
-        gen = OutputGenerator(_workspace, adapter=_adapter_cache.get("adapter"))
+        gen = OutputGenerator(_workspace)
         report = gen.generate_status_report()
         data = {"type": "status_report", "timestamp": time.time(), **report}
         event_history.append(data)
@@ -651,7 +652,7 @@ async def get_status_report() -> JSONResponse:
         return JSONResponse({"error": "No workspace"}, status_code=400)
     try:
         from alpha_lab.output_generator import OutputGenerator
-        gen = OutputGenerator(_workspace, adapter=_adapter_cache.get("adapter"))
+        gen = OutputGenerator(_workspace)
         report = gen.generate_status_report()
         return JSONResponse(report)
     except Exception as e:
@@ -667,17 +668,13 @@ async def get_leaderboard() -> JSONResponse:
         return JSONResponse({"leaderboard": []})
     import json as _json
 
-    # Use adapter metric if available
-    _metric = "sharpe"
-    _direction = "maximize"
-    _display_name = "Sharpe"
     _adapter = _adapter_cache.get("adapter")
-    if _adapter is not None:
-        _metric = _adapter.metric.primary_metric
-        _direction = _adapter.metric.direction
-        _display_name = _adapter.metric.display_name
+    if _adapter is None:
+        return JSONResponse({"error": "adapter not loaded"}, status_code=503)
+    _metric = _adapter.metric.primary_metric
+    _direction = _adapter.metric.direction
 
-    leaders = manager.db.leaderboard(_metric, 20)
+    leaders = manager.db.leaderboard(_metric, 20, _direction)
 
     def _safe_metrics(results_json: str | None) -> dict:
         if not results_json:
@@ -689,8 +686,6 @@ async def get_leaderboard() -> JSONResponse:
 
     return JSONResponse({
         "metric": _metric,
-        "direction": _direction,
-        "display_name": _display_name,
         "leaderboard": [
             {
                 "id": exp.id,
@@ -734,12 +729,13 @@ async def chat_query(body: dict) -> JSONResponse:
                 context_parts.append(f"  {status}: {count}")
 
             # Leaderboard
-            _chat_metric = "sharpe"
-            _chat_metric_display = "Sharpe"
-            if _adapter_cache.get("adapter") is not None:
-                _chat_metric = _adapter_cache["adapter"].metric.primary_metric
-                _chat_metric_display = _adapter_cache["adapter"].metric.display_name
-            leaders = manager.db.leaderboard(_chat_metric, 5)
+            _chat_adapter = _adapter_cache.get("adapter")
+            if _chat_adapter is None:
+                return JSONResponse({"error": "adapter not loaded"}, status_code=503)
+            _chat_metric = _chat_adapter.metric.primary_metric
+            _chat_metric_display = _chat_adapter.metric.display_name
+            _chat_direction = _chat_adapter.metric.direction
+            leaders = manager.db.leaderboard(_chat_metric, 5, _chat_direction)
             if leaders:
                 context_parts.append(f"\n## Top 5 Experiments (by {_chat_metric_display})")
                 for i, exp in enumerate(leaders, 1):
@@ -825,39 +821,23 @@ if _frontend_dist.exists():
 # ---------------------------------------------------------------------------
 
 
-def serve_main() -> None:
+@click.command(
+    name="alpha-lab-serve",
+    help="Alpha Lab Web Dashboard — passive viewer for a running or completed pipeline",
+    context_settings={"show_default": True},
+)
+@click.option("--workspace", type=str, required=True, help="Workspace directory path to monitor")
+@click.option("--port", type=int, default=8000, help="Server port")
+@click.option("--host", type=str, default="0.0.0.0", help="Server host")
+def serve_main(workspace: str, port: int, host: str) -> None:
     """CLI entry point for the web dashboard server.
 
     This server is a passive viewer — it does not start or stop the pipeline.
     Run the pipeline separately via ``python run.py``, then point this server
     at the same workspace to monitor progress.
     """
-    parser = argparse.ArgumentParser(
-        prog="alpha-lab-serve",
-        description="Alpha Lab Web Dashboard — passive viewer for a running or completed pipeline",
-    )
-    parser.add_argument(
-        "--workspace",
-        type=str,
-        required=True,
-        help="Workspace directory path to monitor",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="Server port (default: 8000)",
-    )
-    parser.add_argument(
-        "--host",
-        type=str,
-        default="0.0.0.0",
-        help="Server host (default: 0.0.0.0)",
-    )
-    args = parser.parse_args()
-
     global _workspace
-    _workspace = os.path.abspath(args.workspace)
+    _workspace = os.path.abspath(workspace)
     manager.workspace = _workspace
 
     print(f"Workspace: {_workspace}")
@@ -866,8 +846,8 @@ def serve_main() -> None:
 
     uvicorn.run(
         app,
-        host=args.host,
-        port=args.port,
+        host=host,
+        port=port,
         log_level="info",
     )
 

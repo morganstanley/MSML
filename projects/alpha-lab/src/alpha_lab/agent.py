@@ -1,7 +1,7 @@
 """Core agent loop for alpha-lab.
 
 Provider-agnostic: talks to the Provider protocol instead of the OpenAI SDK
-directly. Supports OpenAI Responses API and Anthropic Messages API.
+directly. Backed by the OpenAI Responses API.
 
 Features:
   - ZDR-compatible mode: local conversation history tracking
@@ -19,7 +19,7 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -35,9 +35,31 @@ from alpha_lab.events import (
     ToolCallEvent,
     ToolResultEvent,
 )
+from alpha_lab.agents.agent_definition import AgentDefinition
 from alpha_lab.prompts import build_system_prompt
 from alpha_lab.provider import Provider, ToolCall
-from alpha_lab.tools import ALL_TOOL_SCHEMAS, execute_tool, get_tool_schemas, parse_tool_args
+from alpha_lab.tools import (
+    DEFAULT_TIMEOUT,
+    default_tool_schemas,
+    execute_tool,
+    get_tool_schemas,
+    parse_tool_args,
+)
+from alpha_lab.tools.tool_definition import ToolDefinition
+from alpha_lab.tracing import (
+    GEN_AI_AGENT_NAME,
+    GEN_AI_OPERATION_NAME,
+    GEN_AI_REQUEST_MODEL,
+    GEN_AI_SYSTEM,
+    GEN_AI_TOOL_CALL_ID,
+    GEN_AI_TOOL_NAME,
+    GEN_AI_USAGE_INPUT_TOKENS,
+    GEN_AI_USAGE_OUTPUT_TOKENS,
+    GenAiOperationNameValues,
+    get_tracer,
+    provider_to_system,
+)
+from opentelemetry import trace
 
 logger = logging.getLogger("alpha_lab.agent")
 
@@ -59,11 +81,59 @@ CONTINUE_MESSAGE = (
 )
 
 
+# TODO: Fold into AgentLoop initialization or turn into a factory function
+def build_loop_kwargs(
+    agent_definition: AgentDefinition,
+    *,
+    reasoning_effort_default: str | None = None,
+    log_name: str | None = None,
+    tools: Sequence[ToolDefinition] | None = None,
+) -> dict[str, Any]:
+    """Build the AgentLoop kwargs derived from an AgentDefinition.
+
+    Omits ``reasoning_effort`` when it resolves to ``None`` so callers without a
+    config fallback keep AgentLoop's own default.
+    """
+    kwargs: dict[str, Any] = {
+        "tools": get_tool_schemas(
+            agent_definition.tools if tools is None else tools,
+            include_web_search=agent_definition.include_web_search,
+        ),
+        "log_name": agent_definition.log_name if log_name is None else log_name,
+        "min_report_attempts": agent_definition.min_report_attempts,
+    }
+    reasoning_effort = agent_definition.reasoning_effort or reasoning_effort_default
+    if reasoning_effort is not None:
+        kwargs["reasoning_effort"] = reasoning_effort
+    return kwargs
+
+
 class AgentLoop:
     """The main agent loop: send messages, stream responses, dispatch tools.
 
     Emits events via event_callback. Supports ask_user blocking via
     threading primitives. Can be stopped externally via stop().
+
+    ``prompt_builder`` contract
+    ----------------------------
+    Any callable supplied as ``prompt_builder`` MUST accept four
+    arguments:
+
+        prompt_builder(
+            workspace: str | None,
+            learnings: str | None,
+            config: Any | None = None,
+            adapter: Any | None = None,
+        ) -> str
+
+    The 4th ``adapter`` parameter is required even for closures that
+    capture ``adapter`` from their enclosing scope and don't read the
+    kwarg — declaring ``adapter=None`` in the signature is enough.
+    ``AgentLoop._build_system_instructions`` always passes
+    ``adapter=self.adapter``; a builder that omits the parameter will
+    raise ``TypeError`` at runtime. The default ``build_system_prompt``
+    in ``prompts.py`` accepts ``adapter`` and uses it to load the
+    customized ``phase1`` prompt from ``workspace/adapter/phase1.md``.
     """
 
     def __init__(
@@ -81,6 +151,8 @@ class AgentLoop:
         db: Any | None = None,
         metrics: Any | None = None,
         adapter: Any | None = None,
+        mlflow_run_target: str | None = None,
+        memory_store: Any | None = None,
     ) -> None:
         self.provider = provider
         self.model = model
@@ -88,13 +160,18 @@ class AgentLoop:
         self.event_callback = event_callback
         self.reasoning_effort = reasoning_effort
         self.config = config
-        self.tools = tools if tools is not None else ALL_TOOL_SCHEMAS
+        self.tools = tools if tools is not None else default_tool_schemas()
         self.prompt_builder = prompt_builder or build_system_prompt
         self.log_name = log_name
         self.min_report_attempts = min_report_attempts
         self.db = db
         self.metrics = metrics
         self.adapter = adapter
+        self.memory_store = memory_store
+        # MLflow Run UUID this agent's trace should attach to. ``None`` →
+        # the active pipeline Run. Phase 3 workers pass their experiment's
+        # sub-run UUID. Honored only when MLflow is the active backend.
+        self._mlflow_run_target = mlflow_run_target
 
         self._depth = 0  # 0 = top-level agent, 1 = sub-agent (max)
         self._consecutive_tool_calls = 0
@@ -102,6 +179,13 @@ class AgentLoop:
         self._report_attempts = 0
         self._done = False
         self._stop_requested = False
+
+        # OTel tracer — resolved once here so we don't call get_tracer() per span
+        self._tracer = get_tracer()
+        # Pre-compute the gen_ai.system value from config.provider
+        self._gen_ai_system = provider_to_system(
+            getattr(config, "provider", "") if config else ""
+        )
 
         # For ask_user blocking
         self._question_event = threading.Event()
@@ -125,34 +209,61 @@ class AgentLoop:
         self.event_callback(event)
         if self._log_file is not None:
             try:
-                self._log_file.write(json.dumps(event.to_dict()) + "\n")
+                self._log_file.write(json.dumps(event.to_dict(), default=str) + "\n")
                 self._log_file.flush()
             except (OSError, TypeError, ValueError) as e:
                 logger.warning("Failed to write event to JSONL log: %s", e)
 
     def run(self, initial_message: str) -> None:
         """Top-level entry point for running in a background thread."""
-        self._init_log()
-        self.emit(StatusEvent(status="starting", detail="Agent starting"))
-        try:
-            self.send_user_message(initial_message)
-            if self._done:
-                self.emit(StatusEvent(status="done", detail="Agent finished"))
-            elif self._stop_requested:
-                self.emit(StatusEvent(status="stopped", detail="Agent stopped by user"))
-            else:
-                # API returned None (retries exhausted) or nudge limit hit
-                self.emit(StatusEvent(status="error", detail="Agent stopped unexpectedly"))
-        except Exception as e:
-            if not self._stop_requested:
-                self.emit(ErrorEvent(message=f"Agent error: {e}"))
-                self.emit(StatusEvent(status="error", detail=str(e)))
-        finally:
-            if self._log_file is not None:
-                try:
-                    self._log_file.close()
-                except OSError as e:
-                    logger.warning("Failed to close JSONL log file: %s", e)
+        # When MLflow is the active backend, layer an MLflow agent-trace ctx
+        # mgr around the OTel span. agent_trace is a no-op in Tempo mode, so
+        # the OTel span is the only thing that runs there.
+        from alpha_lab import mlflow_logger
+        mlflow_ctx = mlflow_logger.agent_trace(
+            f"invoke_agent {self.log_name}",
+            target_run_uuid=self._mlflow_run_target,
+            attributes={
+                "alpha_lab.agent.name": self.log_name,
+                "alpha_lab.agent.depth": self._depth,
+                "alpha_lab.agent.model": self.model,
+            },
+        )
+        with mlflow_ctx, self._tracer.start_as_current_span(
+            f"invoke_agent {self.log_name}",
+            kind=trace.SpanKind.INTERNAL,
+            attributes={
+                GEN_AI_OPERATION_NAME: GenAiOperationNameValues.INVOKE_AGENT.value,
+                GEN_AI_AGENT_NAME: self.log_name,
+                GEN_AI_SYSTEM: self._gen_ai_system,
+                GEN_AI_REQUEST_MODEL: self.model,
+                # alpha_lab.* prefix: custom namespace to avoid collision with
+                # future GenAI semconv additions (Decision #6).
+                "alpha_lab.agent.depth": self._depth,
+            },
+        ) as agent_span:
+            self._init_log()
+            self.emit(StatusEvent(status="starting", detail="Agent starting"))
+            try:
+                self.send_user_message(initial_message)
+                if self._done:
+                    self.emit(StatusEvent(status="done", detail="Agent finished"))
+                elif self._stop_requested:
+                    self.emit(StatusEvent(status="stopped", detail="Agent stopped by user"))
+                else:
+                    self.emit(StatusEvent(status="error", detail="Agent stopped unexpectedly"))
+            except Exception as e:
+                agent_span.set_status(trace.StatusCode.ERROR)
+                agent_span.record_exception(e)
+                if not self._stop_requested:
+                    self.emit(ErrorEvent(message=f"Agent error: {e}"))
+                    self.emit(StatusEvent(status="error", detail=str(e)))
+            finally:
+                if self._log_file is not None:
+                    try:
+                        self._log_file.close()
+                    except OSError as e:
+                        logger.warning("Failed to close JSONL log file: %s", e)
 
     def stop(self) -> None:
         """Request the agent to stop. Unblocks any waiting ask_user."""
@@ -208,7 +319,7 @@ class AgentLoop:
         )
 
         # Simple prompt builder that uses the task as the system prompt
-        def sub_agent_prompt_builder(workspace: str, learnings: str, config: Any = None) -> str:
+        def sub_agent_prompt_builder(workspace: str, learnings: str, config: Any = None, adapter: Any = None) -> str:
             parts = [
                 "You are a focused sub-agent. Complete the task described below, "
                 "then call report_to_user with a summary of your findings and results.",
@@ -270,18 +381,31 @@ class AgentLoop:
         # Check if we need to summarize and fork
         if self.context.should_summarize():
             self.emit(StatusEvent(status="thinking", detail="Summarizing context..."))
-            self.context.summarize_and_fork()
-            # Clear the actual API history — the summary is injected into
-            # the system prompt, so old messages no longer need to be sent.
-            self._input_history.clear()
+            _summary, trimmed = self.context.summarize_and_fork(
+                history=self._input_history,
+            )
+            if trimmed is not None:
+                self._input_history = trimmed
 
         input_items = self.provider.build_user_items(message)
         self._run_loop(input_items)
 
     def _build_system_instructions(self) -> str:
-        """Build system instructions with current learnings."""
+        """Build system instructions with current learnings.
+
+        Every prompt_builder in the codebase (default ``build_system_prompt``
+        and the closure-style builders in worker/strategist/pipeline/
+        supervisor/phase0) accepts a 4th ``adapter`` parameter. Closures
+        ignore it (they capture adapter from their own enclosing scope);
+        the default builder uses it to pick up the customized ``phase1``
+        prompt from ``workspace/adapter/phase1.md``. The uniform contract
+        lets us call every builder the same way.
+        """
         learnings = self.context.get_learnings()
-        prompt = self.prompt_builder(self.context.workspace, learnings, self.config)
+        prompt = self.prompt_builder(
+            self.context.workspace, learnings, self.config,
+            adapter=self.adapter,
+        )
 
         if self.context.summary:
             prompt += (
@@ -313,6 +437,8 @@ class AgentLoop:
                     self.metrics.record_api_call(
                         response.input_tokens,
                         response.output_tokens,
+                        cache_read_tokens=response.cache_read_input_tokens,
+                        cache_write_tokens=response.cache_write_input_tokens,
                     )
 
             if response.text:
@@ -373,57 +499,106 @@ class AgentLoop:
             if self._stop_requested:
                 return None
 
-            try:
-                full_text = ""
-                response = None
+            # Decision #3: one chat span per attempt — each retry is a distinct
+            # API call with its own latency and token counts.
+            from alpha_lab import mlflow_logger
+            mlflow_chat_ctx = mlflow_logger.child_span(
+                f"chat {self.model}", span_type=mlflow_logger.SpanType.LLM,
+            )
+            with mlflow_chat_ctx as mlflow_chat_span, self._tracer.start_as_current_span(
+                f"chat {self.model}",
+                kind=trace.SpanKind.CLIENT,
+                attributes={
+                    GEN_AI_OPERATION_NAME: GenAiOperationNameValues.CHAT.value,
+                    GEN_AI_SYSTEM: self._gen_ai_system,
+                    GEN_AI_REQUEST_MODEL: self.model,
+                },
+            ) as chat_span:
+                mlflow_logger.set_inputs(mlflow_chat_span, {
+                    "model": self.model,
+                    "system": instructions,
+                    "messages": self._input_history,
+                    "tools": [t.get("name") for t in (self.tools or []) if isinstance(t, dict)],
+                    "reasoning_effort": self.reasoning_effort,
+                })
+                try:
+                    full_text = ""
+                    response = None
 
-                for event in self.provider.stream_response(
-                    model=self.model,
-                    system=instructions,
-                    history=self._input_history,
-                    tools=self.tools,
-                    reasoning_effort=self.reasoning_effort,
-                ):
-                    if self._stop_requested:
-                        return None
+                    for event in self.provider.stream_response(
+                        model=self.model,
+                        system=instructions,
+                        history=self._input_history,
+                        tools=self.tools,
+                        reasoning_effort=self.reasoning_effort,
+                    ):
+                        if self._stop_requested:
+                            return None
 
-                    if event.type == "text_delta":
-                        full_text += event.delta
-                        self.emit(AgentTextEvent(
-                            delta=event.delta,
-                            full_text=full_text,
-                        ))
-                    elif event.type == "done":
-                        response = event.response
+                        if event.type == "text_delta":
+                            full_text += event.delta
+                            self.emit(AgentTextEvent(
+                                delta=event.delta,
+                                full_text=full_text,
+                            ))
+                        elif event.type == "done":
+                            response = event.response
 
-                # Emit the full response payload
-                if response is not None:
-                    self.emit(ApiResponseEvent(
-                        response_id=response.id,
-                        output=response.raw_output_items,
-                        usage={
+                    # Emit the full response payload
+                    if response is not None:
+                        # NOTE: GEN_AI_RESPONSE_MODEL intentionally omitted —
+                        # ProviderResponse does not expose response_model yet.
+                        # Add when provider protocol gains it (Decision #4).
+                        chat_span.set_attribute(
+                            GEN_AI_USAGE_INPUT_TOKENS, response.input_tokens
+                        )
+                        chat_span.set_attribute(
+                            GEN_AI_USAGE_OUTPUT_TOKENS, response.output_tokens
+                        )
+                        usage = {
                             "input_tokens": response.input_tokens,
                             "output_tokens": response.output_tokens,
-                        },
-                    ))
+                        }
+                        if response.cache_read_input_tokens > 0:
+                            usage["cache_read_input_tokens"] = response.cache_read_input_tokens
+                        if response.cache_write_input_tokens > 0:
+                            usage["cache_write_input_tokens"] = response.cache_write_input_tokens
 
-                return response
+                        mlflow_logger.set_outputs(mlflow_chat_span, {
+                            "id": response.id,
+                            "text": response.text,
+                            "tool_calls": [
+                                {"call_id": tc.call_id, "name": tc.name, "arguments": tc.arguments}
+                                for tc in response.tool_calls
+                            ],
+                            **usage,
+                        })
 
-            except Exception as e:
-                if self.metrics is not None:
-                    self.metrics.record_error(is_api_error=True)
-                delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
-                if attempt < MAX_RETRIES - 1:
-                    self.emit(StatusEvent(
-                        status="error",
-                        detail=f"API error: {e}. Retrying in {delay}s...",
-                    ))
-                    time.sleep(delay)
-                else:
-                    self.emit(ErrorEvent(
-                        message=f"API error after {MAX_RETRIES} retries: {e}",
-                    ))
-                    return None
+                        self.emit(ApiResponseEvent(
+                            response_id=response.id,
+                            output=response.raw_output_items,
+                            usage=usage,
+                        ))
+
+                    return response
+
+                except Exception as e:
+                    chat_span.set_status(trace.StatusCode.ERROR)
+                    chat_span.record_exception(e)
+                    if self.metrics is not None:
+                        self.metrics.record_error(is_api_error=True)
+                    delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+                    if attempt < MAX_RETRIES - 1:
+                        self.emit(StatusEvent(
+                            status="error",
+                            detail=f"API error: {e}. Retrying in {delay}s...",
+                        ))
+                        time.sleep(delay)
+                    else:
+                        self.emit(ErrorEvent(
+                            message=f"API error after {MAX_RETRIES} retries: {e}",
+                        ))
+                        return None
 
         return None
 
@@ -487,31 +662,59 @@ class AgentLoop:
                 detail=status_detail,
             ))
 
-            # Handle spawn_sub_agent within AgentLoop (needs self.provider, etc.)
-            if name == "spawn_sub_agent":
-                task = args.get("task", "")
-                context_info = args.get("context", "")
-                try:
-                    output_text = self._spawn_sub_agent(task, context_info)
-                    result = {"output": output_text}
-                except Exception as e:
-                    result = {"output": f"[ERROR] Sub-agent failed: {e}"}
-            else:
-                # Execute the tool
-                # Pass OpenAI client for web_search proxy (Anthropic provider has one)
-                _openai_client = getattr(self.provider, "openai_client", None)
-                try:
-                    result = execute_tool(
-                        name=name,
-                        arguments=args,
-                        workspace=self.context.workspace or ".",
-                        ask_user_fn=self._ask_user_fn,
-                        db=self.db,
-                        openai_client=_openai_client,
-                        adapter=self.adapter,
-                    )
-                except Exception as e:
-                    result = {"output": f"[TOOL ERROR] {name} raised an exception: {e}"}
+            # One span per tool execution (GenAI semconv: execute_tool)
+            from alpha_lab import mlflow_logger
+            mlflow_tool_ctx = mlflow_logger.child_span(
+                f"execute_tool {name}", span_type=mlflow_logger.SpanType.TOOL,
+            )
+            with mlflow_tool_ctx as mlflow_tool_span, self._tracer.start_as_current_span(
+                f"execute_tool {name}",
+                kind=trace.SpanKind.INTERNAL,
+                attributes={
+                    GEN_AI_OPERATION_NAME: GenAiOperationNameValues.EXECUTE_TOOL.value,
+                    GEN_AI_SYSTEM: self._gen_ai_system,
+                    GEN_AI_TOOL_NAME: name,
+                    GEN_AI_TOOL_CALL_ID: call_id,
+                },
+            ) as tool_span:
+                mlflow_logger.set_inputs(mlflow_tool_span, {
+                    "tool_name": name, "call_id": call_id, "arguments": args,
+                })
+                # Handle spawn_sub_agent within AgentLoop (needs self.provider, etc.)
+                if name == "spawn_sub_agent":
+                    task = args.get("task", "")
+                    context_info = args.get("context", "")
+                    try:
+                        output_text = self._spawn_sub_agent(task, context_info)
+                        result = {"output": output_text}
+                    except Exception as e:
+                        tool_span.set_status(trace.StatusCode.ERROR)
+                        tool_span.record_exception(e)
+                        result = {"output": f"[ERROR] Sub-agent failed: {e}"}
+                else:
+                    # Execute the tool
+                    _openai_client = getattr(self.provider, "openai_client", None)
+                    try:
+                        result = execute_tool(
+                            name=name,
+                            arguments=args,
+                            workspace=self.context.workspace or ".",
+                            ask_user_fn=self._ask_user_fn,
+                            db=self.db,
+                            openai_client=_openai_client,
+                            adapter=self.adapter,
+                            shell_timeout=getattr(self.config, "shell_timeout", DEFAULT_TIMEOUT),
+                            memory_store=self.memory_store,
+                        )
+                    except Exception as e:
+                        tool_span.set_status(trace.StatusCode.ERROR)
+                        tool_span.record_exception(e)
+                        result = {"output": f"[TOOL ERROR] {name} raised an exception: {e}"}
+                mlflow_logger.set_outputs(mlflow_tool_span, {
+                    "output": result.get("output"),
+                    "image_media_type": result.get("image", (None, None))[1],
+                    "done": result.get("done", False),
+                })
 
             output = result["output"]
 
@@ -552,9 +755,18 @@ class AgentLoop:
                     })
                     self._done = True
             else:
+                # Compact large tool outputs to keep history bounded.
+                # Cap is config-driven so runs that see heavy truncation-induced
+                # follow-up round-trips can raise it without a code change. Type
+                # and range of `tool_output_max_chars` are enforced at config
+                # load time (TaskConfig.__post_init__), so this is an int >= 100.
+                max_chars = getattr(self.config, "tool_output_max_chars", 8000)
+                compacted = ContextManager.compact_tool_output(
+                    output, name, max_chars=max_chars
+                )
                 tool_outputs.append({
                     "call_id": call_id,
-                    "output": output,
+                    "output": compacted,
                 })
 
             # Track images for injection

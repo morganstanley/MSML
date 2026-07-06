@@ -3,10 +3,40 @@
 from __future__ import annotations
 
 import json
+import logging
+import math
 import sqlite3
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+logger = logging.getLogger("alpha_lab.experiment_db")
+
+
+def is_smoke_result(results_json: str | None) -> bool:
+    """Return True if the results JSON contains ``smoke_test: true``.
+
+    This is the single source of truth for deciding whether metrics came
+    from a quick smoke run rather than a full GPU execution.  The flag
+    is expected to be set by the experiment's ``run_experiment.py`` when
+    invoked with ``--smoke``.
+    """
+    if not results_json:
+        return False
+    try:
+        data = json.loads(results_json)
+        if isinstance(data, dict):
+            return data.get("smoke_test") is True
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return False
+
+
+# Sentinel file written into <experiment>/results/ by the launcher when
+# the experiment subprocess exits with code 0 and metrics.json is present.
+CANONICAL_RUN_COMPLETE_SENTINEL = ".canonical_run_complete"
 
 
 KANBAN_COLUMNS = (
@@ -20,6 +50,11 @@ KANBAN_COLUMNS = (
     "done",
     "cancelled",  # Experiments pruned by strategist
 )
+
+# Statuses that reserve a compute slot for capacity accounting — from acceptance
+# through job completion; pre-submission states (to_implement/implemented/checked)
+# reserve capacity, they don't yet occupy a running slot.
+BUSY_STATUSES = ("to_implement", "implemented", "checked", "queued", "running")
 
 
 @dataclass
@@ -40,6 +75,11 @@ class Experiment:
     started_at: float | None
     finished_at: float | None
     fix_attempts: int = 0  # Number of times fixer has tried to fix this experiment
+    # MLflow back-reference cache. Populated by _attach_mlflow_run_to_experiment
+    # when MLflow is active; NULL otherwise (no MLflow). Lets workers and
+    # update_experiment look up the sub-run UUID in O(1).
+    mlflow_run_uuid: str | None = None
+    mlflow_artifact_uri: str | None = None
 
 
 _CREATE_TABLE = """\
@@ -59,17 +99,20 @@ CREATE TABLE IF NOT EXISTS experiments (
     updated_at REAL NOT NULL,
     started_at REAL,
     finished_at REAL,
-    fix_attempts INTEGER NOT NULL DEFAULT 0
+    fix_attempts INTEGER NOT NULL DEFAULT 0,
+    mlflow_run_uuid TEXT,
+    mlflow_artifact_uri TEXT
 );
 """
 
 
 def _row_to_experiment(row: sqlite3.Row) -> Experiment:
-    # Handle missing fix_attempts column for existing DBs
-    try:
-        fix_attempts = row["fix_attempts"]
-    except (KeyError, IndexError):
-        fix_attempts = 0
+    # Tolerate older DBs missing newer columns.
+    def _opt(col: str, default: object = None) -> object:
+        try:
+            return row[col]
+        except (KeyError, IndexError):
+            return default
 
     return Experiment(
         id=row["id"],
@@ -87,7 +130,9 @@ def _row_to_experiment(row: sqlite3.Row) -> Experiment:
         updated_at=row["updated_at"],
         started_at=row["started_at"],
         finished_at=row["finished_at"],
-        fix_attempts=fix_attempts,
+        fix_attempts=_opt("fix_attempts", 0),  # type: ignore[arg-type]
+        mlflow_run_uuid=_opt("mlflow_run_uuid"),  # type: ignore[arg-type]
+        mlflow_artifact_uri=_opt("mlflow_artifact_uri"),  # type: ignore[arg-type]
     )
 
 
@@ -111,8 +156,19 @@ class ExperimentDB:
         with self._lock:
             conn = self._connect()
             try:
-                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA journal_mode=DELETE")
                 conn.execute(_CREATE_TABLE)
+                # Migrate older DBs that predate columns added later. ALTER
+                # TABLE ADD COLUMN is idempotent-safe via try/except —
+                # SQLite raises OperationalError when the column exists.
+                for col_def in (
+                    "mlflow_run_uuid TEXT",
+                    "mlflow_artifact_uri TEXT",
+                ):
+                    try:
+                        conn.execute(f"ALTER TABLE experiments ADD COLUMN {col_def}")
+                    except sqlite3.OperationalError:
+                        pass  # already present
                 conn.commit()
             finally:
                 conn.close()
@@ -215,6 +271,23 @@ class ExperimentDB:
             finally:
                 conn.close()
 
+    def set_mlflow_run(
+        self, exp_id: int, run_uuid: str, artifact_uri: str,
+    ) -> None:
+        """Persist the MLflow sub-run UUID + artifact URI for this experiment."""
+        now = time.time()
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "UPDATE experiments SET mlflow_run_uuid = ?, "
+                    "mlflow_artifact_uri = ?, updated_at = ? WHERE id = ?",
+                    (run_uuid, artifact_uri, now, exp_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
     def set_results(self, exp_id: int, results_json: str) -> None:
         now = time.time()
         with self._lock:
@@ -306,6 +379,46 @@ class ExperimentDB:
         finally:
             conn.close()
 
+    def list_experiments(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status_filter: str | None = None,
+        name_search: str | None = None,
+    ) -> tuple[list[Experiment], int]:
+        """Paginated experiment query. Returns (experiments, total_count)."""
+        conn = self._connect()
+        try:
+            where_clauses: list[str] = []
+            params: list[str | int] = []
+
+            if status_filter:
+                where_clauses.append("status = ?")
+                params.append(status_filter)
+            if name_search:
+                where_clauses.append("name LIKE ?")
+                params.append(f"%{name_search}%")
+
+            where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM experiments{where_sql}", params
+            ).fetchone()[0]
+
+            # Secondary sort by id breaks ties on updated_at, which can
+            # collide because time.time() resolution is coarser than the
+            # rate at which rows update during a busy dispatcher. Without
+            # a stable tiebreaker, pagination can skip or double-count
+            # rows across pages.
+            rows = conn.execute(
+                f"SELECT * FROM experiments{where_sql} ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+                params + [limit, offset],
+            ).fetchall()
+
+            return [_row_to_experiment(r) for r in rows], total
+        finally:
+            conn.close()
+
     def board_summary(self) -> dict[str, int]:
         conn = self._connect()
         try:
@@ -316,23 +429,86 @@ class ExperimentDB:
         finally:
             conn.close()
 
-    def leaderboard(self, metric_key: str = "sharpe", top_n: int = 10) -> list[Experiment]:
+    def leaderboard(
+        self,
+        metric_key: str,
+        top_n: int,
+        direction: Literal["maximize", "minimize"],
+    ) -> list[Experiment]:
+        """Return top experiments sorted by metric_key.
+
+        Args:
+            metric_key: JSON key to extract from results_json.
+            top_n: Number of experiments to return.
+            direction: "maximize" or "minimize".
+        """
+        if direction not in ("maximize", "minimize"):
+            raise ValueError(f"direction must be 'maximize' or 'minimize', got {direction!r}")
         conn = self._connect()
         try:
             rows = conn.execute(
-                "SELECT * FROM experiments WHERE results_json IS NOT NULL "
+                "SELECT * FROM experiments "
+                "WHERE results_json IS NOT NULL "
                 "ORDER BY updated_at DESC"
             ).fetchall()
             experiments = [_row_to_experiment(r) for r in rows]
 
+            # Filter by the launcher-written canonical-run sentinel.
+            # Reject names containing path separators or `..` parts so a
+            # malformed name can't make the existence check resolve outside
+            # <workspace>/experiments/<name>/.
+            workspace = Path(self.db_path).parent
+            experiments_dir = workspace / "experiments"
+            before_sentinel = len(experiments)
+
+            filtered: list[Experiment] = []
+            for e in experiments:
+                if "/" in e.name or "\\" in e.name:
+                    continue
+                try:
+                    if ".." in Path(e.name).parts:
+                        continue
+                    if (
+                        experiments_dir / e.name / "results" / CANONICAL_RUN_COMPLETE_SENTINEL
+                    ).is_file():
+                        filtered.append(e)
+                except (OSError, ValueError):
+                    continue
+            experiments = filtered
+            dropped = before_sentinel - len(experiments)
+            if dropped:
+                logger.debug(
+                    "Leaderboard: excluded %d row(s) with no canonical-run sentinel",
+                    dropped,
+                )
+
+            # Smoke-test filter.
+            before = len(experiments)
+            experiments = [
+                e for e in experiments
+                if not is_smoke_result(e.results_json)
+            ]
+            filtered = before - len(experiments)
+            if filtered:
+                logger.debug(
+                    "Leaderboard: excluded %d smoke-test result(s)", filtered
+                )
+
+            worst = float("-inf") if direction == "maximize" else float("inf")
+
             def sort_key(exp: Experiment) -> float:
                 try:
                     results = json.loads(exp.results_json or "{}")
-                    return float(results.get(metric_key, float("-inf")))
+                    if not isinstance(results, dict):
+                        return worst
+                    val = float(results.get(metric_key, worst))
                 except (json.JSONDecodeError, ValueError, TypeError):
-                    return float("-inf")
+                    return worst
+                if math.isnan(val):
+                    return worst
+                return val
 
-            experiments.sort(key=sort_key, reverse=True)
+            experiments.sort(key=sort_key, reverse=(direction != "minimize"))
             return experiments[:top_n]
         finally:
             conn.close()

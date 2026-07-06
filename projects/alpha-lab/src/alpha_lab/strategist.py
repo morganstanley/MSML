@@ -4,20 +4,27 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from alpha_lab.agent import AgentLoop
+if TYPE_CHECKING:
+    from alpha_lab.adapter import DomainAdapter
+
+from alpha_lab import deps, utils
+from alpha_lab.agents import load_agent
+from alpha_lab.sandboxing import sandbox
 from alpha_lab.config import TaskConfig
-from alpha_lab.context import ContextManager
 from alpha_lab.events import AgentEvent
-from alpha_lab.experiment_db import ExperimentDB
-from alpha_lab.prompts import build_step_prompt
+from alpha_lab.experiment_db import ExperimentDB, is_smoke_result
 from alpha_lab.provider import Provider
-from alpha_lab.tools import WEB_SEARCH_TOOL, get_tool_schemas
 
 logger = logging.getLogger("alpha_lab.strategist")
+
+
+class StallError(RuntimeError):
+    """Strategist proposed nothing into an idle board with free capacity — fail the run."""
 
 
 class Strategist:
@@ -26,23 +33,21 @@ class Strategist:
     def __init__(
         self,
         provider: Provider,
-        config: TaskConfig,
         workspace: str,
         db: ExperimentDB,
         event_callback: Callable[[AgentEvent], None],
-        adapter: Any = None,
+        adapter: DomainAdapter,
     ) -> None:
         self.provider = provider
-        self.config = config
         self.workspace = workspace
         self.db = db
         self.event_callback = event_callback
         self.adapter = adapter
-        self._agent: AgentLoop | None = None
+        self._run_handle: sandbox.AgentRunHandle | None = None
 
     def stop(self) -> None:
-        if self._agent is not None:
-            self._agent.stop()
+        if self._run_handle is not None:
+            self._run_handle.stop()
 
     @staticmethod
     def _resource_snapshot() -> str:
@@ -123,19 +128,42 @@ class Strategist:
 
         return "\n".join(lines)
 
-    def _build_context(self) -> str:
+    def _proposal_bounds(self) -> tuple[int, int, dict[str, dict[str, int]]]:
+        """(min_proposals, max_proposals, slot_states) for this turn.
+
+        max = min(free slots, free workers, remaining budget) — what a worker can pick up
+        immediately without exceeding max_experiments. min = 1 only when the board is idle
+        (no busy slots) with capacity and budget free, else 0.
+        """
+        states = utils.slot_states(self.db)
+        free_total = sum(s["free"] for s in states.values())
+        busy_total = sum(s["busy"] for s in states.values())
+        free_workers = utils.worker_states(self.db)["free"]
+
+        # Global experiment budget: never propose past max_experiments (cancelled
+        # experiments don't consume budget — matches _build_context).
+        config = deps.get().config
+        summary = self.db.board_summary()
+        total_proposed = sum(v for k, v in summary.items() if k != "cancelled")
+        remaining_budget = max(0, config.pipeline.phase3.max_experiments - total_proposed)
+
+        min_proposals = 1 if (
+            busy_total == 0 and free_total > 0 and remaining_budget > 0
+        ) else 0
+        max_proposals = min(free_total, free_workers, remaining_budget)
+        return min_proposals, max_proposals, states
+
+    def _build_context(self, jit_bounds: tuple[int, int] | None = None) -> str:
         """Build rich context for the strategist from DB and workspace files."""
         parts: list[str] = []
+        config = deps.get().config
 
-        # Use adapter metric if available
-        _metric = "sharpe"
-        _metric_display = "Sharpe"
-        if self.adapter is not None:
-            _metric = self.adapter.metric.primary_metric
-            _metric_display = self.adapter.metric.display_name
+        _metric = self.adapter.metric.primary_metric
+        _metric_display = self.adapter.metric.display_name
+        _direction = self.adapter.metric.direction
 
         # Budget tracking — cancelled experiments do not consume budget slots
-        max_experiments = self.config.pipeline.phase3.max_experiments
+        max_experiments = config.pipeline.phase3.max_experiments
         summary = self.db.board_summary()
         total_proposed = sum(v for k, v in summary.items() if k != "cancelled")
         analyzed_count = summary.get("analyzed", 0)
@@ -161,8 +189,11 @@ class Strategist:
         if recent:
             parts.append("\n## Recent Experiments")
             for exp in recent:
+                smoke = is_smoke_result(exp.results_json)
                 metrics_str = ""
-                if exp.results_json:
+                if smoke:
+                    metrics_str = " [SMOKE — metrics redacted]"
+                elif exp.results_json:
                     try:
                         m = json.loads(exp.results_json)
                         pieces = [f"{k}={v}" for k, v in m.items()]
@@ -175,7 +206,7 @@ class Strategist:
                 )
 
         # Leaderboard
-        leaders = self.db.leaderboard(_metric, 10)
+        leaders = self.db.leaderboard(_metric, 10, _direction)
         if leaders:
             parts.append(f"\n## Leaderboard (by {_metric_display})")
             for i, exp in enumerate(leaders, 1):
@@ -209,7 +240,7 @@ class Strategist:
                         )
 
         # Playbook (suppressed in no_playbook ablation mode)
-        if not self.config.pipeline.phase3.no_playbook:
+        if not config.pipeline.phase3.no_playbook:
             playbook_path = Path(self.workspace) / "playbook.md"
             if playbook_path.exists():
                 content = playbook_path.read_text().strip()
@@ -218,80 +249,114 @@ class Strategist:
             else:
                 parts.append("\n## Current Playbook\nNo playbook yet — this is your first turn.")
 
-        # Phase 1 learnings
-        learnings_path = Path(self.workspace) / "learnings.md"
-        if learnings_path.exists():
-            content = learnings_path.read_text().strip()
-            if content:
-                parts.append(f"\n## Phase 1 Learnings\n{content[:3000]}")
+        # Submission rules: proposal directives + allowed resources + resource state +
+        # in-flight list. Rendered every turn; directives and the allowed `resource` set
+        # branch on JIT mode. Resource state is identical in both modes (all enabled
+        # devices, including fully-occupied ones JIT won't let you propose for). Only
+        # `running` rows carry runtime duration/limit; earlier states haven't started.
+        states = utils.slot_states(self.db)
+        allowed = (
+            list(states)
+            if jit_bounds is None
+            else [t for t, s in states.items() if s["free"] > 0]
+        )
 
-        # Task config
-        if self.config:
-            parts.append(f"\n## Task Config")
-            parts.append(f"Data: {self.config.data_path}")
-            parts.append(f"Description: {self.config.description}")
-            if self.config.target:
-                parts.append(f"Target: {self.config.target}")
+        parts += [
+            "\n## Submission Rules",
+            "Generate experiment proposals based on your current strategy.",
+            f"STRICT: Each proposal's requested `resource` must be exactly one of: {allowed}.",
+            "STRICT: Only propose an experiment if it makes more sense to do so now than later.",
+            "STRICT: Explain how many experiments you proposed and why when calling `report_to_user`.",
+        ]
+        if jit_bounds is not None:
+            min_proposals, max_proposals = jit_bounds
+            parts.append(
+                f"STRICT: Generate {min_proposals} to {max_proposals} just-in-time"
+                " proposals for immediate execution based on the available slots."
+            )
+
+        parts += ["", "### Resource State"]
+        for rtype, s in states.items():
+            parts.append(f"{rtype.upper()}: {s['free']} of {s['total']} slots free")
+
+        parts += ["", "### In-flight experiments:"]
+        p3 = config.pipeline.phase3
+        in_flight = self.db.list_by_status(
+            "to_implement", "implemented", "checked", "queued", "running"
+        )
+        now = time.time()
+        for exp in in_flight:
+            if exp.status == "running" and exp.started_at:
+                rd = int(now - exp.started_at)
+                limit = (
+                    p3.cpu_time_limit_seconds
+                    if utils.experiment_resource(exp) == "cpu"
+                    else p3.time_limit_seconds
+                )
+                parts.append(
+                    f"{exp.name}: {exp.status}, runtime duration: {rd}s, runtime limit: {limit}s"
+                )
+            else:
+                parts.append(f"{exp.name}: {exp.status}")
+        if not in_flight:
+            parts.append("(none)")
 
         return "\n".join(parts)
 
     def run_turn(self) -> None:
         """Run a single strategist turn."""
         logger.info("Strategist turn starting")
+        config = deps.get().config
 
-        extra_context = self._build_context()
+        # JIT: compute this turn's proposal bounds. Skip the turn entirely if nothing can
+        # be implemented right now (no free slot or no free worker) rather than design
+        # stale work — the trigger re-fires once capacity frees up.
+        jit_bounds = None
+        forcing = False
+        if config.pipeline.phase3.jit:
+            min_p, max_p, _states = self._proposal_bounds()
+            if max_p == 0:
+                logger.info("Strategist turn skipped: no free slot/worker to fill now")
+                return
+            jit_bounds = (min_p, max_p)
+            forcing = min_p == 1
 
-        def prompt_builder(
-            workspace: str | None,
-            learnings: str | None,
-            config: Any | None = None,
-        ) -> str:
-            return build_step_prompt(
-                "phase3_strategist",
-                workspace,
-                learnings,
-                config,
-                extra_context,
-                adapter=self.adapter,
+        extra_context = self._build_context(jit_bounds)
+
+        agent_definition = load_agent("phase3/strategist")
+        # Remove the playbook tool in no_playbook ablation mode.
+        tools_include = None
+        if config.pipeline.phase3.no_playbook:
+            tools_include = tuple(
+                tool.name
+                for tool in agent_definition.tools
+                if tool.name != "update_playbook"
             )
 
-        tool_names = [
-            "read_board", "propose_experiment", "cancel_experiments",
-            "update_playbook", "read_file", "grep_file", "report_to_user",
-        ]
-        # Remove playbook tool in no_playbook ablation mode
-        if self.config.pipeline.phase3.no_playbook:
-            tool_names.remove("update_playbook")
-
-        tools = get_tool_schemas(tool_names, include_web_search=True)
-
-        context = ContextManager(
-            provider=self.provider,
-            model=self.config.model,
-            workspace=self.workspace,
-        )
-
-        agent = AgentLoop(
-            provider=self.provider,
-            model=self.config.model,
-            context=context,
-            event_callback=self.event_callback,
-            reasoning_effort=self.config.reasoning_effort,
-            config=self.config,
-            tools=tools,
-            prompt_builder=prompt_builder,
-            log_name="strategist",
-            min_report_attempts=1,
-            db=self.db,
-            adapter=self.adapter,
-        )
-
-        self._agent = agent
         try:
-            agent.run(
-                "Review the board and propose new experiments. "
-                "Read the context above for current state. Go."
+            sandbox.run_agent(
+                "phase3/strategist",
+                self.event_callback,
+                initial_message=(
+                    "Review the board and propose new experiments. "
+                    "Read the context above for current state. Go."
+                ),
+                extra_context=extra_context,
+                tools_include=tools_include,
+                db_path=self.db.db_path,
+                provider=self.provider,
+                db=self.db,
+                adapter=self.adapter,
+                owner=self,
             )
         finally:
-            self._agent = None
             logger.info("Strategist turn complete")
+
+        # JIT fail-loud: if the board was idle with free capacity (forcing) and the
+        # strategist still proposed nothing, fail the run rather than silently stall.
+        if forcing and (
+            sum(s["busy"] for s in utils.slot_states(self.db).values()) == 0
+        ):
+            raise StallError(
+                "Strategist proposed nothing into an idle board with free capacity"
+            )

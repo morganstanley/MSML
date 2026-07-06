@@ -1,0 +1,103 @@
+#
+# This rubric is strict, and that is intentional.  If we don't have additional
+# criteria then we're depending on this.  If we do have additional criteria, then
+# we can down-weight this metric.
+#
+semantic_similarity_rubric_1: |
+  Compare the candidate document against the reference document.
+
+  Before scoring, perform these steps:
+  1. List every top-level section (## heading) in the reference.
+  2. For each, state whether it appears in the candidate with its content intact.
+  3. Note any content that is truncated mid-sentence or mid-list.
+
+  Then score on a scale of 1-5:
+  5 = All reference sections present and complete; no truncation
+  4 = All reference sections present; one has minor omissions; no truncation
+  3 = One section missing OR any content truncated mid-sentence
+  2 = Two or more sections missing, OR one missing AND truncation present
+  1 = Most reference sections absent or contradicted
+
+  New content beyond the reference should not reduce the score.
+
+# This is harsher still, need to bake-off between the two
+semantic_similarity_rubric: |
+  Compare the candidate against the reference. Start at 5 and deduct:
+
+  -1 for each reference section (## heading) missing entirely from the candidate
+  -1 if any reference content is truncated mid-sentence or mid-list
+  -1 if the meaning of a reference section is contradicted or significantly altered
+
+  Minimum score is 1. New content beyond the reference is not a deduction.
+
+llm_speedrun_pleias:          # arbitrary name, selected via --eval-name
+  judge:
+    provider: openai
+    model: gpt-4o-mini
+  files:
+    domain_knowledge:
+      criteria: {
+        "Columns": "Lists at least 5 of the actual column names (synth_id, language, exercise, query, synthetic_reasoning, synthetic_answer, words).",
+        "Primary metric": "Identifies val_bpb (validation bits-per-byte) as the primary metric.",
+        "Model architectures": "Mentions at least one appropriate architecture (e.g., GPT-2, LLaMA, or similar transformer variants).",
+        "Optimizer recommendations": "Mentions at least one appropriate optimizer (e.g., AdamW, Muon, or Sophia).",
+        "Dead ends": "Identifies 2 or more approaches known to be unhelpful for this task (e.g., data augmentation, regularization, ensemble methods, distillation, quantization).",
+        "Hard constraints": "States both constraints: fewer than 100M trainable parameters AND a 20-minute wall-clock time limit.",
+        "Data distributions": "Notes at least two of: ~80% English language, ~90% memorization exercises, or row-length summary statistics (mean, median, or max).",
+      }
+      weights:
+        criteria: 0.6
+        similarity: 0.4
+    phase1:
+    phase2_builder:
+    phase2_critic:
+    phase2_tester:
+    phase3_fixer:
+    phase3_reporter:
+    phase3_strategist:
+    phase3_worker_analyze:
+    phase3_worker_implement:
+  mechanical_metrics:
+    input_tokens: { floor: 500, ceiling: 20000 }
+    output_tokens: { floor: 200, ceiling: 15000 }
+    tool_calls: { floor: 3, ceiling: 25 }
+    duration_seconds: { floor: 30, ceiling: 300 }
+  weights:
+    files: 0.8
+    mechanical: 0.2
+
+hourly_road_traffic:
+  judge:
+    provider: openai
+    model: gpt-4o-mini
+  files:
+    domain_knowledge:
+      criteria: {
+        "Columns": "Mentions the actual column names (item_id, start, target, feat_static_cat).",
+        "Domain priors": "Mentions both daily and weekly seasonality (e.g. daily rush-hour and lower weekend occupancy).",
+        "Data quality": "Notes relevant quality characteristics (no missing values, global minimum, maximum and mean).",
+        "Task summary": "Identifies goal as forecasting hourly road occupancy ratios for the next 24 hours.",
+        "Scaling": "Notes that data is already normalized.",
+        "Baselines": "Mentions baselines (last value naive, seasonal naive, moving average).",
+        "Metrics": "Mentions multiple evaluation metrics (RMSE, MAE, MASE).",
+      }
+      weights:
+        criteria: 0.6
+        similarity: 0.4
+    phase1:
+    phase2_builder:
+    phase2_critic:
+    phase2_tester:
+    phase3_fixer:
+    phase3_reporter:
+    phase3_strategist:
+    phase3_worker_analyze:
+    phase3_worker_implement:
+  mechanical_metrics:
+    input_tokens: { floor: 500, ceiling: 20000 }
+    output_tokens: { floor: 200, ceiling: 15000 }
+    tool_calls: { floor: 3, ceiling: 25 }
+    duration_seconds: { floor: 30, ceiling: 300 }
+  weights:
+    files: 0.8
+    mechanical: 0.2  

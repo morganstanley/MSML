@@ -3,11 +3,41 @@
 from __future__ import annotations
 
 import os
+import sys
+import tempfile
 from pathlib import Path
 
-import pytest
+_FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-from alpha_lab.experiment_db import ExperimentDB
+# Block tiktoken before any alpha_lab import so tests use the deterministic
+# character-based fallback in alpha_lab.context. Avoids the Azure-blob BPE
+# fetch (which hangs on locked-down networks) and removes the need for a
+# checked-in BPE cache fixture.
+sys.modules["tiktoken"] = None  # type: ignore[assignment]
+
+# Neutralize litellm's GitHub pricing fetch. pytest-env in pyproject.toml
+# also sets this; setdefault keeps it idempotent.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
+
+# Run agents in-process by default: the suite drives AgentLoops with fake providers
+# that can't cross a bwrap subprocess boundary. Sandbox-specific tests opt back in.
+os.environ.setdefault("ALPHALAB_AGENT_NOSANDBOX", "1")
+
+import pytest  # noqa: E402
+
+from alpha_lab.adapter import DomainAdapter, ExperimentStructure, MetricConfig  # noqa: E402
+from alpha_lab.experiment_db import ExperimentDB  # noqa: E402
+
+
+@pytest.fixture()
+def adapter() -> DomainAdapter:
+    """A minimal DomainAdapter with default metric and experiment structure."""
+    return DomainAdapter(
+        metric=MetricConfig(),
+        experiment=ExperimentStructure(
+            required_files=["strategy.py", "run_experiment.py"],
+        ),
+    )
 
 
 @pytest.fixture()
@@ -27,7 +57,18 @@ def db(tmp_path: Path) -> ExperimentDB:
 
 @pytest.fixture()
 def populated_db(db: ExperimentDB) -> ExperimentDB:
-    """An ExperimentDB pre-populated with experiments in various states."""
+    """An ExperimentDB pre-populated with experiments in various states.
+
+    Rows with `results_json` set also have the canonical-run sentinel created.
+    """
+    from alpha_lab.experiment_db import CANONICAL_RUN_COMPLETE_SENTINEL
+    workspace = Path(db.db_path).parent
+
+    def _sentinel(name: str) -> None:
+        d = workspace / "experiments" / name / "results"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / CANONICAL_RUN_COMPLETE_SENTINEL).touch()
+
     # to_implement
     db.create("exp_xgboost_baseline", "XGBoost baseline", "Trees work", '{"model": "xgboost"}')
     # implemented
@@ -52,6 +93,7 @@ def populated_db(db: ExperimentDB) -> ExperimentDB:
     db.update_status(5, "running", started_at=1000.0)
     db.update_status(5, "finished", finished_at=2000.0)
     db.set_results(5, '{"sharpe": 1.5, "max_drawdown": -0.12, "mae": 0.03}')
+    _sentinel("exp_tcn_v1")
     # analyzed
     db.create("exp_deepar_v1", "DeepAR", "Probabilistic", '{"model": "deepar"}')
     db.update_status(6, "implemented")
@@ -60,6 +102,7 @@ def populated_db(db: ExperimentDB) -> ExperimentDB:
     db.update_status(6, "running", started_at=1000.0)
     db.update_status(6, "finished", finished_at=2000.0)
     db.set_results(6, '{"sharpe": 2.1, "max_drawdown": -0.08, "mae": 0.02}')
+    _sentinel("exp_deepar_v1")
     db.update_status(6, "analyzed")
     # done
     db.create("exp_patchtst_v1", "PatchTST", "Patch attention", '{"model": "patchtst"}')
@@ -69,6 +112,7 @@ def populated_db(db: ExperimentDB) -> ExperimentDB:
     db.update_status(7, "running", started_at=1000.0)
     db.update_status(7, "finished", finished_at=2000.0)
     db.set_results(7, '{"sharpe": 0.8, "max_drawdown": -0.20, "mae": 0.05}')
+    _sentinel("exp_patchtst_v1")
     db.update_status(7, "analyzed")
     db.update_status(7, "done")
     return db

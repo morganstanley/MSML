@@ -1,0 +1,21 @@
+{
+  "domain_name": "tabular_regression",
+  "domain_description": "Tabular regression: predict a continuous target from tabular features",
+  "phase2_framework_description": "evaluation framework for tabular regression",
+  "phase2_review_file": "review.md",
+  "metric": {
+    "primary_metric": "mse",
+    "direction": "minimize",
+    "extract_key": "mse",
+    "display_name": "MSE",
+    "secondary_metrics": ["mae", "r2"]
+  },
+  "experiment": {
+    "required_files": ["strategy.py", "run_experiment.py"],
+    "entry_point": "run_experiment.py",
+    "results_dir": "results",
+    "results_file": "metrics.json",
+    "framework_dir": "harness",
+    "framework_files": ["strategy.py", "engine.py", "metrics.py", "baselines.py", "run_harness.py"]
+  }
+}

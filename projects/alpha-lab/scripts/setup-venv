@@ -1,0 +1,75 @@
+#!/bin/bash
+
+VENV_PATH=""
+DEFAULT_VENV_PATH="/var/tmp/${USER}/alpha-lab/venv"
+PYTHON_VERSION="3.12.3"
+
+# Resolve sourced script path portably across bash/zsh/ksh.
+# Each branch is wrapped in `eval` so shell-specific syntax in one
+# branch does not get parsed (and error) in another shell.
+if [ -n "${BASH_VERSION:-}" ]; then
+    _SCRIPT_FILE="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then
+    eval '_SCRIPT_FILE="${(%):-%x}"'
+else
+    eval '_SCRIPT_FILE="${.sh.file}"'
+fi
+REPO_DIR="$(dirname "$(realpath "${_SCRIPT_FILE}")")/.."
+
+usage() {
+    echo "usage: source $0 [OPTIONS]"
+    echo "options:"
+    echo "  --venv-path <path>   Path to existing venv (default creates ${DEFAULT_VENV_PATH})"
+    echo "  -h, --help           Show this help message"
+}
+
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        "--venv-path")
+            VENV_PATH="$2"
+            shift 2
+            ;;
+        "-h"|"--help")
+            usage
+            return 0 2>/dev/null || exit 0
+            ;;
+        "--")
+            shift
+            break
+            ;;
+        *)
+            echo "ERROR: unknown option - $1"
+            usage
+            return 1 2>/dev/null || exit 1
+            ;;
+    esac
+done
+
+setup_venv() {
+    typeset VENV_PATH="${VENV_PATH:-$DEFAULT_VENV_PATH}"
+    mkdir -p "${VENV_PATH}"
+
+    python -m venv "${VENV_PATH}"
+    echo "Sourcing venv at ${VENV_PATH}"
+    source "${VENV_PATH}/bin/activate"
+
+    echo "Installing alpha-lab with dev dependencies"
+    pip install -v -e "${REPO_DIR}[dev,torch-gpu]"
+}
+
+if [ -n "${VENV_PATH}" ]; then
+    echo "Using provided venv at ${VENV_PATH}"
+    export ALPHALAB_PYTHON="${VENV_PATH}/bin/python"
+    source ${VENV_PATH}/bin/activate
+elif [ -n "${VIRTUAL_ENV}" ]; then
+    echo "Using active venv at ${VIRTUAL_ENV}"
+    export ALPHALAB_PYTHON="${VIRTUAL_ENV}/bin/python"
+    source ${VIRTUAL_ENV}/bin/activate
+else
+    echo "No venv found, creating new venv"
+    setup_venv
+    export ALPHALAB_PYTHON="${VIRTUAL_ENV}/bin/python"
+fi
+
+echo "ALPHALAB_PYTHON set to ${ALPHALAB_PYTHON}"

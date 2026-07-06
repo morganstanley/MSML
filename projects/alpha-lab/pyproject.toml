@@ -4,27 +4,42 @@ version = "0.1.0"
 description = "Alpha Lab — Autonomous Research Agent"
 requires-python = ">=3.11"
 dependencies = [
+    "numpy",
+    "pandas<3.0",
     # LLM providers
     "openai>=1.82.0",
-    "anthropic>=0.40.0",
     "httpx>=0.28.0",
     # Web server
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "watchfiles>=1.0.0",
     # CLI
+    "click>=8.3.0,<9.0",
     "rich>=14.0.0",
     "prompt-toolkit>=3.0.50",
     # Utilities
     "tiktoken>=0.9.0",
     "pyyaml>=6.0",
     "pydantic>=2.0",
+    "pydantic-evals>=1.89.1,<2.0",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "mlflow",
+    "jinja2>=3.1.6,<3.2", # Transitive dependency made concrete
 ]
 
 [project.scripts]
 alpha-lab = "alpha_lab.cli:main"
 alpha-lab-run = "alpha_lab.run:run_main"
 alpha-lab-serve = "alpha_lab.server:serve_main"
+alpha-lab-evaluate = "alpha_lab.evaluations:main"
+alpha-lab-memory = "alpha_lab.memory_cli:main"
+generate-synthetic-data = "alpha_lab.generate_synthetic_data:main"
+alpha-lab-copy-workspace = "alpha_lab.benchmarks.scripts.copy_workspace:cli"
+alpha-lab-register-workspaces = "alpha_lab.benchmarks.scripts.register_workspaces:cli"
+alpha-lab-remove-benchmark = "alpha_lab.benchmarks.scripts.remove_benchmark:cli"
+alpha-lab-create-suite = "alpha_lab.benchmarks.scripts.create_suite:cli"
+alpha-lab-run-benchmarks = "alpha_lab.benchmarks.scripts.run_benchmarks:cli"
 
 [build-system]
 requires = ["hatchling"]
@@ -33,8 +48,32 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/alpha_lab"]
 
-[dependency-groups]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+env = [
+    "LITELLM_LOCAL_MODEL_COST_MAP=true",
+]
+
+[project.optional-dependencies]
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.2",
+    "pytest-env>=1.0.0",
+    "tabulate>=0.9",
 ]
+
+# Synthetic tabular benchmark generation. Required for
+# alpha_lab.benchmarks.generators.structural_causal.StructuralCausalGenerator.
+benchmarks = [
+    "tabicl",
+    "xgboost",
+    "scipy",
+    "joblib",
+]
+
+# CI hosts don't have a GPU, so it's pointless to download 2GB of cuda
+# assets.  Note that these are mutually exclusive when installed with pip
+torch-cpu = ["torch==2.9.1+cpu"]
+torch-gpu = ["torch==2.9.1+cu126"]
+# Plain build index (no local +cpu/+cu126 qualifier)
+torch-plain = ["torch==2.9.1"]

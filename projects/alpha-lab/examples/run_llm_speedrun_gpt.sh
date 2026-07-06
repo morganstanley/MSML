@@ -1,8 +1,8 @@
 #!/bin/bash
 # ==========================================================================
-# Paper Run: LLM Speedrun — GPT-4o
+# Paper Run: LLM Speedrun — GPT-5.2
 # ==========================================================================
-# Launch in tmux. Expects auth token to be fresh (run scripts/auth_setup.sh first).
+# Launch in tmux. Expects OPENAI_API_KEY to be set.
 #
 # Results: paper_final_results/llm_speedrun/gpt52/
 # ==========================================================================
@@ -15,7 +15,7 @@ WORKSPACE="$DIR/paper_final_results/llm_speedrun/gpt52"
 
 mkdir -p "$WORKSPACE"
 
-echo "=== LLM Speedrun — GPT-4o ==="
+echo "=== LLM Speedrun — GPT-5.2 ==="
 echo "Config:    $DIR/data/paper_llm_speedrun_gpt.json"
 echo "Workspace: $WORKSPACE"
 echo "Python:    $PY"

@@ -9,16 +9,20 @@ from __future__ import annotations
 
 import logging
 import os
-import signal
 import subprocess
 import sys
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from alpha_lab.experiment_db import Experiment
+from alpha_lab.experiment_db import (
+    CANONICAL_RUN_COMPLETE_SENTINEL,
+    Experiment,
+)
+from alpha_lab.utils import detect_gpu_ids
+from alpha_lab.process_control import escalate_termination
 
 logger = logging.getLogger("alpha_lab.local_gpu")
 
@@ -40,10 +44,26 @@ class RecoveredProcess:
             self.returncode = 0  # Assume successful completion
             return 0
 
+    def wait(self, timeout: float | None = None):
+        """Block until the (foreign) process exits, polling since we can't os.waitpid it.
+
+        Lets a recovered job flow through the shared process_control teardown, which
+        signals the group via os.killpg and waits here for the exit.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while self.poll() is None:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(cmd=f"pid {self.pid}", timeout=timeout)
+            time.sleep(1)
+        return self.returncode
+
 
 RUN_SCRIPT = """\
 #!/bin/bash
 cd {exp_dir}
+# Clear stale metrics.json with the sentinel: a leftover metrics.json
+# from a prior run could let an exit-0 rerun trigger a false sentinel.
+rm -f results/{sentinel} results/metrics.json
 export PYTHONPATH={workspace}:$PYTHONPATH
 export CUDA_VISIBLE_DEVICES={gpu_id}
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
@@ -73,6 +93,11 @@ except Exception:
 sys.argv = ['run_experiment.py']
 runpy.run_path('run_experiment.py', run_name='__main__')
 "
+EXIT_CODE=$?
+if [ $EXIT_CODE -eq 0 ] && [ -f results/metrics.json ]; then
+    touch results/{sentinel}
+fi
+exit $EXIT_CODE
 """
 
 
@@ -100,7 +125,7 @@ class LocalGPUManager:
 
     def __init__(
         self,
-        gpu_ids: list[int] | None = None,
+        gpu_ids: list[int] | str = "auto",
         max_per_gpu: int = 1,
         time_limit_seconds: int = 7200,
         python_executable: str = "",
@@ -108,19 +133,26 @@ class LocalGPUManager:
         """
         Parameters
         ----------
-        gpu_ids : list[int], optional
-            Which GPU indices to use. Defaults to [0,1,2,3] (auto-detect would
-            be better but this is simple).
+        gpu_ids : list[int] | str
+            ``"auto"`` (default) detects GPUs via nvidia-smi.
+            ``[]`` disables GPU usage (CPU-only).
+            An explicit list like ``[0, 1]`` pins to those devices.
         max_per_gpu : int
-            Max concurrent experiments per GPU. Start with 1, increase for
-            packing if models fit.
+            Max concurrent experiments per GPU.
         time_limit_seconds : int
             Subprocess timeout. Killed after this (like SLURM --time).
         python_executable : str
             Path to the Python interpreter for experiment subprocesses.
             Empty string (default) uses sys.executable.
         """
-        self.gpu_ids = gpu_ids if gpu_ids is not None else [0, 1, 2, 3]
+        if isinstance(gpu_ids, str):
+            if gpu_ids != "auto":
+                raise ValueError(
+                    f"gpu_ids must be 'auto' or a list of int, got {gpu_ids!r}"
+                )
+            self.gpu_ids = self._detect_gpus()
+        else:
+            self.gpu_ids = gpu_ids
         self.max_per_gpu = max_per_gpu
         self.time_limit = time_limit_seconds
         self.python_executable = python_executable or sys.executable
@@ -238,6 +270,18 @@ class LocalGPUManager:
                 load[job.gpu_id] += 1
         return load
 
+    def _detect_gpus(self) -> list[int]:
+        """Auto-detect available GPU indices by querying nvidia-smi."""
+        detected = detect_gpu_ids()
+        if detected:
+            logger.info(f"Auto-detected GPUs: {detected}")
+            return detected
+        logger.warning(
+            "GPU auto-detection failed; no GPUs detected. "
+            "Set gpu_ids explicitly if GPUs are available but not discoverable."
+        )
+        return []
+
     def _get_gpu_memory_free(self) -> dict[int, int]:
         """Query nvidia-smi for free memory (in MB) per GPU.
 
@@ -258,8 +302,7 @@ class LocalGPUManager:
                 if len(parts) == 2:
                     gpu_idx = int(parts[0].strip())
                     free_mb = int(parts[1].strip())
-                    if gpu_idx in self.gpu_ids:
-                        memory[gpu_idx] = free_mb
+                    memory[gpu_idx] = free_mb
             return memory
         except Exception as e:
             logger.warning(f"Failed to query GPU memory: {e}")
@@ -351,6 +394,11 @@ class LocalGPUManager:
         gpu_memory = self._get_gpu_memory_free()
 
         if gpu_memory and exp is not None and workspace is not None:
+            # Filter to GPUs that nvidia-smi actually reports (physical GPUs only)
+            available_gpus = [gpu for gpu in available_gpus if gpu in gpu_memory]
+            if not available_gpus:
+                return None
+
             mem_required = self._estimate_memory_requirement(exp, workspace)
 
             candidates = []
@@ -362,7 +410,8 @@ class LocalGPUManager:
             if candidates:
                 return max(candidates)[1]  # most free memory
             else:
-                logger.info(f"No GPU has sufficient memory ({mem_required} MB required). "
+                logger.info(f"No GPU has sufficient memory ({mem_required} MB required) "
+                           f"for experiment {exp.name}. "
                            f"Available: {[(g, gpu_memory.get(g)) for g in available_gpus]}. "
                            f"Job will wait for memory to free up.")
                 return None
@@ -377,6 +426,10 @@ class LocalGPUManager:
             if job.proc.poll() is None:
                 count += 1
         return count
+
+    def total_slots(self) -> int:
+        """Total concurrent GPU experiment slots (one slot = one experiment)."""
+        return len(self.gpu_ids) * self.max_per_gpu
 
     def can_submit(self, exp: Experiment | None = None) -> bool:
         """Check if we have capacity to submit a job.
@@ -407,6 +460,7 @@ class LocalGPUManager:
             workspace=workspace,
             gpu_id=gpu_id,
             python_exe=self.python_executable,
+            sentinel=CANONICAL_RUN_COMPLETE_SENTINEL,
         )
         script_path = exp_dir / "run_local.sh"
         script_path.write_text(script_content)
@@ -421,6 +475,7 @@ class LocalGPUManager:
                 stdout=output_file,
                 stderr=subprocess.STDOUT,
                 cwd=str(exp_dir),
+                env={**os.environ, "ALPHALAB_WORKSPACE": str(Path(workspace).resolve())},
                 start_new_session=True,  # detach from terminal
             )
         except Exception:
@@ -484,25 +539,7 @@ class LocalGPUManager:
         if job_id not in self._jobs:
             return
         job = self._jobs[job_id]
-        if job.proc.poll() is None:
-            try:
-                # Kill the whole process group
-                os.killpg(os.getpgid(job.proc.pid), signal.SIGTERM)
-                job.proc.wait(timeout=5)
-            except (ProcessLookupError, ChildProcessError):
-                pass  # Process already exited
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(job.proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, ChildProcessError):
-                    pass  # Process already exited
-                # Reap the child to prevent zombie
-                try:
-                    job.proc.wait(timeout=5)
-                except (subprocess.TimeoutExpired, OSError):
-                    pass
-            except OSError as e:
-                logger.warning("Failed to kill job %s: %s", job_id, e)
+        escalate_termination(job.proc, term_grace=5, kill_grace=5, process_group=True)
         self._cleanup_job(job_id)
 
     def cancel(self, job_id: str) -> None:

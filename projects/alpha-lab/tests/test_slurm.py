@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from alpha_lab.experiment_db import Experiment
+from alpha_lab.experiment_db import CANONICAL_RUN_COMPLETE_SENTINEL, Experiment
 from alpha_lab.slurm import SlurmManager
 
 
@@ -61,8 +61,22 @@ class TestSbatchGeneration:
 
     def test_script_contains_run_command(self, slurm: SlurmManager, sample_experiment: Experiment) -> None:
         script = slurm.generate_sbatch_script(sample_experiment, "/workspace")
-        assert "uv run python run_experiment.py" in script
+        assert "run_experiment.py" in script
         assert "cd /workspace/experiments/exp_lstm_v1" in script
+
+    def test_script_writes_sentinel_only_on_success(
+        self, slurm: SlurmManager, sample_experiment: Experiment,
+    ) -> None:
+        """Sentinel is written only on exit=0 AND metrics.json present;
+        stale sentinel + metrics.json are cleared at run start."""
+        script = slurm.generate_sbatch_script(sample_experiment, "/workspace")
+        assert (
+            f"rm -f results/{CANONICAL_RUN_COMPLETE_SENTINEL} results/metrics.json"
+            in script
+        )
+        assert "EXIT_CODE=$?" in script
+        assert "[ $EXIT_CODE -eq 0 ] && [ -f results/metrics.json ]" in script
+        assert f"touch results/{CANONICAL_RUN_COMPLETE_SENTINEL}" in script
 
     def test_partition_round_robin(self, slurm: SlurmManager, sample_experiment: Experiment) -> None:
         """Partitions should cycle through the list."""

@@ -11,7 +11,9 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import math
 import os
+import time
 import re
 import shutil
 from pathlib import Path
@@ -268,30 +270,18 @@ class OutputGenerator:
         if not run_src:
             return []
         params = []
-        # Match add_argument lines with defaults
-        descs = {
-            "horizon": "Forecast horizon in days",
-            "n_lags": "Number of lag features",
-            "initial_train": "Initial training window (days)",
-            "test_size": "Test window size (days)",
-            "step_size": "Step size between folds (days)",
-            "embargo": "Embargo gap between train and test (days)",
-            "transaction_cost": "Cost per unit turnover",
-            "periods_per_year": "Trading days per year (for annualization)",
-        }
         for match in re.finditer(
             r'add_argument\("--([^"]+)".*?default=([^,\)]+)',
             run_src,
         ):
             arg_name = match.group(1).replace("-", "_")
             default = match.group(2).strip()
-            if arg_name in descs:
-                # Clean up expressions like "365 * 5"
-                try:
-                    display_val = str(eval(default))  # noqa: S307 — trusted source
-                except Exception:
-                    display_val = default
-                params.append((arg_name, display_val, descs[arg_name]))
+            # Clean up expressions like "365 * 5"
+            try:
+                display_val = str(eval(default))  # noqa: S307 — trusted source
+            except Exception:
+                display_val = default
+            params.append((arg_name, display_val, ""))
         return params
 
     def _extract_strategy_docs(self, src: str) -> list[tuple[str, str]]:
@@ -319,27 +309,27 @@ class OutputGenerator:
     # Phase 2: Baseline Results
     # ------------------------------------------------------------------
 
-    # Columns that indicate a file contains backtest metrics
-    _METRICS_FINGERPRINT = {"mae", "rmse", "sharpe", "country", "strategy"}
+    # Known metric column names (no structural columns like country/strategy)
+    _KNOWN_METRICS = {
+        "mae", "rmse", "r2", "sharpe", "sharpe_next_day",
+        "max_dd", "max_drawdown", "max_drawdown_next_day",
+        "total_return", "total_return_next_day",
+        "sortino", "sortino_next_day",
+        "ann_return", "ann_vol", "avg_turnover", "total_cost",
+    }
 
     def _looks_like_metrics(self, columns: set[str]) -> bool:
         """Return True if *columns* look like baseline metrics output."""
-        # If adapter is available, check for its primary/secondary metrics
+        # Require strategy column + at least 1 recognized metric column.
+        # Recognized metrics = _KNOWN_METRICS plus the adapter's primary metric
+        # (so non-time-series adapters like wall_clock_seconds match too).
+        has_strategy = "strategy" in columns
+        known = set(self._KNOWN_METRICS)
         if self.adapter is not None:
-            known = {self.adapter.metric.primary_metric} | set(
-                self.adapter.metric.secondary_metrics
-            )
-            if known & columns:
-                return True
-        # Fallback heuristic for time_series (no adapter)
-        has_keys = {"country", "strategy"}.issubset(columns)
-        metric_hits = columns & {
-            "mae", "rmse", "r2", "sharpe", "sharpe_next_day",
-            "max_dd", "max_drawdown", "max_drawdown_next_day",
-            "total_return", "total_return_next_day", "sortino",
-            "sortino_next_day",
-        }
-        return has_keys and len(metric_hits) >= 2
+            if self.adapter.metric.primary_metric:
+                known.add(self.adapter.metric.primary_metric)
+        metric_hits = columns & known
+        return has_strategy and len(metric_hits) >= 1
 
     def _try_load_csv(self, path: Path) -> list[dict] | None:
         try:
@@ -368,7 +358,10 @@ class OutputGenerator:
         Strategy:
         1. Check the canonical path (written by pipeline post-step)
         2. Check well-known locations from previous runs
-        3. Broad discovery: glob for any CSV/Parquet with metrics-like columns
+        3. Scoped discovery: recurse only under likely artifact directories
+           (reports/, plots/, backtest/, output/) instead of globbing the
+           whole workspace — the broad glob was hanging on NFS when data/
+           was large.
         """
         # 1. Canonical path (deterministic post-Phase-2 output)
         canonical = self.workspace / "output" / "baseline_metrics.csv"
@@ -395,23 +388,32 @@ class OutputGenerator:
             if result:
                 return result
 
-        # 3. Broad discovery — search the whole workspace
-        logger.info("Well-known metric paths not found, searching workspace...")
-        for csv_path in sorted(self.workspace.rglob("*.csv")):
-            if "experiment" in str(csv_path) or "__pycache__" in str(csv_path):
+        # 3. Scoped discovery — search likely subdirectories only
+        # (avoid data/ which can be huge on NFS and cause hangs)
+        logger.info("Well-known metric paths not found, searching scoped directories...")
+        search_dirs = [
+            self.workspace / "reports",
+            self.workspace / "plots",
+            self.workspace / "backtest",
+            self.workspace / "output",
+        ]
+        for search_dir in search_dirs:
+            if not search_dir.exists():
                 continue
-            result = self._try_load_csv(csv_path)
-            if result:
-                return result
+            for csv_path in sorted(search_dir.rglob("*.csv")):
+                if "experiment" in str(csv_path) or "__pycache__" in str(csv_path):
+                    continue
+                result = self._try_load_csv(csv_path)
+                if result:
+                    return result
+            for pq_path in sorted(search_dir.rglob("*.parquet")):
+                if "experiment" in str(pq_path) or "__pycache__" in str(pq_path):
+                    continue
+                result = self._try_load_parquet(pq_path)
+                if result:
+                    return result
 
-        for pq_path in sorted(self.workspace.rglob("*.parquet")):
-            if "experiment" in str(pq_path) or "__pycache__" in str(pq_path):
-                continue
-            result = self._try_load_parquet(pq_path)
-            if result:
-                return result
-
-        logger.warning("No baseline metrics found anywhere in workspace")
+        logger.warning("No baseline metrics found in workspace")
         return None
 
     def generate_baseline_results(self) -> Path | None:
@@ -444,22 +446,56 @@ class OutputGenerator:
             (["max_dd", "max_drawdown_next_day", "max_drawdown"], "Max DD", ".4f"),
             (["total_return", "total_return_next_day"], "Total Return", ".4f"),
         ]
+        # Extend with the adapter's primary metric if it isn't already in the
+        # hardcoded time-series list. Non-time-series adapters (nanogpt
+        # wall_clock_seconds, cuda_kernel throughput_gflops, etc.) otherwise
+        # never appear in the summary table.
+        if self.adapter is not None and self.adapter.metric.primary_metric:
+            pm = self.adapter.metric.primary_metric
+            _existing_aliases = {alias for aliases, _, _ in metric_cols for alias in aliases}
+            if pm not in _existing_aliases:
+                metric_cols.append(([pm], self.adapter.metric.display_name or pm, ".4f"))
 
-        # Detect if data has a horizon column (multi-horizon runs)
-        has_horizon = any("horizon" in row for row in rows)
+        # Auto-detect grouping columns: any non-metric column with >1 distinct value.
+        # Presence checks use `col in row` rather than truthy .get(col) — a legitimate
+        # grouping value like 0 (e.g. seed=0, horizon=0) or False would otherwise be
+        # silently dropped, collapsing groups or producing phantom "unknown" rows.
+        _metric_keys = set()
+        for aliases, _, _ in metric_cols:
+            _metric_keys.update(aliases)
+        _meta_keys = {"strategy", "model", "name"}  # not grouping dims
+        _all_keys: set[str] = set()
+        for row in rows:
+            _all_keys.update(row.keys())
+        _group_cols: list[str] = []
+        for col in sorted(_all_keys - _metric_keys - _meta_keys):
+            distinct = set(
+                str(row[col]) for row in rows if col in row and row[col] is not None
+            )
+            if 1 < len(distinct) < len(rows):
+                _group_cols.append(col)
 
-        # Group by country (and horizon if present)
+        def _group_key(row: dict) -> str:
+            parts = [
+                f"{col}={row[col]}" for col in _group_cols
+                if col in row and row[col] is not None
+            ]
+            return " ".join(parts) if parts else ""
+
         groups: dict[str, list[dict]] = {}
         for row in rows:
-            key = str(row.get("country", ""))
-            if has_horizon:
-                key = f"{row.get('country', '')} (h={row.get('horizon', '?')})"
+            key = _group_key(row)
             groups.setdefault(key, []).append(row)
 
         # Summary table
         sections.append("## Summary Table\n")
-        header = "| Country | Strategy | " + " | ".join(m[1] for m in metric_cols) + " |"
-        sep = "|---------|----------|" + "|".join("------:" for _ in metric_cols) + "|"
+        show_group_col = len(groups) > 1
+        if show_group_col:
+            header = "| Group | Strategy | " + " | ".join(m[1] for m in metric_cols) + " |"
+            sep = "|-------|----------|" + "|".join("------:" for _ in metric_cols) + "|"
+        else:
+            header = "| Strategy | " + " | ".join(m[1] for m in metric_cols) + " |"
+            sep = "|----------|" + "|".join("------:" for _ in metric_cols) + "|"
         sections.append(header)
         sections.append(sep)
 
@@ -475,49 +511,81 @@ class OutputGenerator:
                             vals.append(str(raw))
                     else:
                         vals.append("—")
-                line = f"| {group_key} | {row.get('strategy', '?')} | " + " | ".join(vals) + " |"
+                if show_group_col:
+                    line = f"| {group_key} | {row.get('strategy', '?')} | " + " | ".join(vals) + " |"
+                else:
+                    line = f"| {row.get('strategy', '?')} | " + " | ".join(vals) + " |"
                 sections.append(line)
         sections.append("")
 
         # Key observations
         sections.append("## Key Observations\n")
 
-        # Find best strategy per country by Sharpe
-        sharpe_keys = ["sharpe", "sharpe_next_day"]
-        best_by_country: list[tuple[str, str, float]] = []
+        # Determine primary metric from adapter (fall back to sharpe)
+        _bl_metric = "sharpe"
+        _bl_metric_display = "Sharpe"
+        _bl_direction = "maximize"
+        if self.adapter is not None:
+            _bl_metric = self.adapter.metric.primary_metric
+            _bl_metric_display = self.adapter.metric.display_name
+            _bl_direction = self.adapter.metric.direction
+
+        # Build list of column name variants for the primary metric.
+        # Baseline CSVs sometimes suffix metrics with "_next_day" (a time-series
+        # convention); strip/add that suffix so either variant is picked up
+        # without needing a sharpe-specific special case.
+        _bl_keys: list[str] = [_bl_metric]
+        if _bl_metric.endswith("_next_day"):
+            base = _bl_metric[: -len("_next_day")]
+            if base and base not in _bl_keys:
+                _bl_keys.append(base)
+        else:
+            next_day = f"{_bl_metric}_next_day"
+            if next_day not in _bl_keys:
+                _bl_keys.append(next_day)
+
+        # Find best strategy per group by primary metric
+        best_by_group: list[tuple[str, str, float]] = []
         for group_key, crows in sorted(groups.items()):
             best_row = None
-            best_sharpe = -999.0
+            best_val = float("inf") if _bl_direction == "minimize" else float("-inf")
             for row in crows:
-                s = self._get_metric(row, sharpe_keys)
+                s = self._get_metric(row, _bl_keys)
                 try:
                     s = float(s)
-                    if s > best_sharpe:
-                        best_sharpe = s
+                    if math.isnan(s) or math.isinf(s):
+                        continue
+                    is_better = s < best_val if _bl_direction == "minimize" else s > best_val
+                    if is_better:
+                        best_val = s
                         best_row = row
                 except (ValueError, TypeError):
                     continue
             if best_row:
-                best_by_country.append((group_key, best_row.get("strategy", "?"), best_sharpe))
+                label = group_key if group_key else "Overall"
+                best_by_group.append((label, best_row.get("strategy", "?"), best_val))
 
-        if best_by_country:
-            sections.append("**Best baseline by Sharpe per country:**\n")
-            for label, strat, sharpe in best_by_country:
-                sections.append(f"- **{label}**: {strat} (Sharpe {sharpe:.4f})")
+        if best_by_group:
+            group_label = "per group" if show_group_col else "(overall)"
+            sections.append(f"**Best baseline by {_bl_metric_display} {group_label}:**\n")
+            for label, strat, val in best_by_group:
+                sections.append(f"- **{label}**: {strat} ({_bl_metric_display} {val:.4f})")
             sections.append("")
 
         # Overall observations
-        all_sharpes = []
+        all_vals = []
         for row in rows:
-            s = self._get_metric(row, sharpe_keys)
+            s = self._get_metric(row, _bl_keys)
             try:
-                all_sharpes.append(float(s))
+                v = float(s)
+                if not math.isnan(v) and not math.isinf(v):
+                    all_vals.append(v)
             except (ValueError, TypeError):
                 pass
-        if all_sharpes:
+        if all_vals:
             sections.append(
-                f"- Sharpe ratios across all baselines range from "
-                f"{min(all_sharpes):.4f} to {max(all_sharpes):.4f}\n"
+                f"- {_bl_metric_display} across all baselines ranges from "
+                f"{min(all_vals):.4f} to {max(all_vals):.4f}\n"
             )
 
         # Plots
@@ -613,8 +681,19 @@ class OutputGenerator:
 
         sections.append("")
 
-        # Note about plots
-        if self.output_plots.exists() and any(self.output_plots.rglob("*")):
+        # Note about plots — only count actual image files, not empty subdirs
+        # that _copy_plots may have created for absent sources.
+        has_plots = False
+        try:
+            if self.output_plots.exists():
+                plot_exts = {".png", ".jpg", ".jpeg", ".svg", ".pdf"}
+                has_plots = any(
+                    p.is_file() and p.suffix.lower() in plot_exts
+                    for p in self.output_plots.rglob("*")
+                )
+        except Exception:
+            pass
+        if has_plots:
             sections.append(
                 "\n*All referenced plots are copied into `plots/` for "
                 "self-contained viewing.*\n"
@@ -626,7 +705,7 @@ class OutputGenerator:
     # Status Report (structured JSON, no file write)
     # ------------------------------------------------------------------
 
-    def generate_status_report(self, db_path: str | None = None) -> dict[str, Any]:
+    def generate_status_report(self) -> dict[str, Any]:
         """Return a structured status report as a dict.
 
         Reads baseline metrics from output/baseline_metrics.csv and experiment
@@ -634,20 +713,6 @@ class OutputGenerator:
         serialisation and direct rendering by the frontend.
         """
         report: dict[str, Any] = {}
-
-        # --- Metric config (from adapter) ---
-        _primary = "sharpe"
-        _direction = "maximize"
-        _display_name = "Sharpe"
-        if self.adapter is not None:
-            _primary = self.adapter.metric.primary_metric
-            _direction = self.adapter.metric.direction
-            _display_name = self.adapter.metric.display_name
-        report["metric_config"] = {
-            "primary_metric": _primary,
-            "direction": _direction,
-            "display_name": _display_name,
-        }
 
         # --- Problem description (from data_report) ---
         findings = self._read("data_report/findings.md")
@@ -683,75 +748,112 @@ class OutputGenerator:
         if rows:
             baselines["total_rows"] = len(rows)
 
-            # Group by horizon
-            horizons = sorted(set(
-                int(r["horizon"]) for r in rows if "horizon" in r and r["horizon"]
-            )) if any("horizon" in r for r in rows) else []
-            baselines["horizons"] = horizons
+            # Determine primary metric from adapter
+            _kj_metric = "sharpe"
+            _kj_direction = "maximize"
+            if self.adapter is not None:
+                _kj_metric = self.adapter.metric.primary_metric
+                _kj_direction = self.adapter.metric.direction
+            _kj_keys: list[str] = [_kj_metric]
+            if _kj_metric.endswith("_next_day"):
+                base = _kj_metric[: -len("_next_day")]
+                if base and base not in _kj_keys:
+                    _kj_keys.append(base)
+            else:
+                next_day = f"{_kj_metric}_next_day"
+                if next_day not in _kj_keys:
+                    _kj_keys.append(next_day)
+
+            baselines["primary_metric"] = _kj_metric
+
+            # Auto-detect grouping columns (non-metric, non-strategy,
+            # with >1 distinct value — works for any domain).
+            # Exclude known metric columns (not all numeric columns), so
+            # naturally-numeric dims like horizon / seed / batch_size still
+            # get detected as groups.
+            _all_cols: set[str] = set()
+            for r in rows:
+                _all_cols.update(r.keys())
+            _meta_cols = {"strategy", "model", "name"}
+            _metric_cols: set[str] = set(self._KNOWN_METRICS) | set(_kj_keys)
+            _group_cols: list[str] = []
+            # Presence checks use `col in r` rather than truthy .get(col) —
+            # otherwise legitimate grouping values like 0 / False are dropped,
+            # collapsing groups or producing missing group_dims entries.
+            for col in sorted(_all_cols - _metric_cols - _meta_cols):
+                distinct = set(
+                    str(r[col]) for r in rows if col in r and r[col] is not None
+                )
+                if 1 < len(distinct) < len(rows):
+                    _group_cols.append(col)
+
+            # Report discovered grouping columns under a stable schema key
+            # (avoid incorrect/naive pluralization like "countrys").
+            baselines["group_dims"] = {}
+            for col in _group_cols:
+                vals = sorted(set(
+                    str(r[col]) for r in rows if col in r and r[col] is not None
+                ))
+                baselines["group_dims"][col] = vals
 
             strategies = sorted(set(r.get("strategy", "") for r in rows))
             baselines["strategies"] = strategies
 
-            countries = sorted(set(r.get("country", "") for r in rows))
-            baselines["countries"] = countries
+            # Best baseline per group (by primary metric)
+            def _group_key(row: dict) -> tuple:
+                return tuple(str(row.get(c, "")) for c in _group_cols)
 
-            # Best baseline per horizon (by primary metric)
-            primary_keys = [_primary]
-            _better = (lambda a, b: a > b) if _direction == "maximize" else (lambda a, b: a < b)
-            _worst = -999.0 if _direction == "maximize" else 999.0
-            best_per_horizon: list[dict[str, Any]] = []
-            for h in (horizons or [None]):
-                h_rows = [r for r in rows if (h is None or str(r.get("horizon")) == str(h))]
-                if not h_rows:
-                    continue
+            groups: dict[tuple, list[dict]] = {}
+            for r in rows:
+                groups.setdefault(_group_key(r), []).append(r)
+
+            best_per_group: list[dict[str, Any]] = []
+            for gk, g_rows in groups.items():
                 best_row = None
-                best_val = _worst
-                for r in h_rows:
-                    s = self._get_metric(r, primary_keys)
+                best_val = float("inf") if _kj_direction == "minimize" else float("-inf")
+                for r in g_rows:
+                    s = self._get_metric(r, _kj_keys)
                     try:
                         sv = float(s)
-                        if _better(sv, best_val):
+                        if math.isnan(sv) or math.isinf(sv):
+                            continue
+                        is_better = sv < best_val if _kj_direction == "minimize" else sv > best_val
+                        if is_better:
                             best_val = sv
                             best_row = r
                     except (ValueError, TypeError):
                         continue
                 if best_row:
-                    entry: dict[str, Any] = {}
-                    if h is not None:
-                        entry["horizon"] = h
-                    if best_row.get("strategy"):
-                        entry["strategy"] = best_row["strategy"]
-                    if best_row.get("country"):
-                        entry["country"] = best_row["country"]
-                    entry[_primary] = round(best_val, 4)
-                    # Include other numeric values from the row
-                    for k, v in best_row.items():
-                        if k not in entry and k not in ("horizon", "strategy", "country"):
-                            fv = self._safe_float(v)
-                            if fv is not None:
-                                entry[k] = fv
-                    best_per_horizon.append(entry)
-            baselines["best_per_horizon"] = best_per_horizon
+                    entry: dict[str, Any] = {
+                        "strategy": best_row.get("strategy", "?"),
+                        _kj_metric: round(best_val, 4),
+                    }
+                    for col, val in zip(_group_cols, gk):
+                        entry[col] = val
+                    best_per_group.append(entry)
+            baselines["best_per_group"] = best_per_group
 
             # Average primary metric per strategy across all rows
-            strat_values: dict[str, list[float]] = {}
+            strat_vals: dict[str, list[float]] = {}
             for r in rows:
                 strat = r.get("strategy", "?")
-                s = self._get_metric(r, primary_keys)
+                s = self._get_metric(r, _kj_keys)
                 try:
-                    strat_values.setdefault(strat, []).append(float(s))
+                    sv = float(s)
+                    if not math.isnan(sv) and not math.isinf(sv):
+                        strat_vals.setdefault(strat, []).append(sv)
                 except (ValueError, TypeError):
                     pass
-            baselines["avg_primary_by_strategy"] = {
+            baselines[f"avg_{_kj_metric}_by_strategy"] = {
                 s: round(sum(vals) / len(vals), 4)
-                for s, vals in strat_values.items() if vals
+                for s, vals in strat_vals.items() if vals
             }
 
         report["baselines"] = baselines
 
         # --- Experiment results ---
         experiments: dict[str, Any] = {"available": False}
-        db = self._open_experiment_db(db_path)
+        db = self._open_experiment_db()
         if db:
             try:
                 board = db.board_summary()
@@ -761,7 +863,12 @@ class OutputGenerator:
 
                 all_exps = db.list_all()
 
-                # Top models by primary metric (uses _primary/_direction from top)
+                # Top models by primary metric
+                _primary = "sharpe"
+                _direction = "maximize"
+                if self.adapter is not None:
+                    _primary = self.adapter.metric.primary_metric
+                    _direction = self.adapter.metric.direction
 
                 scored: list[dict[str, Any]] = []
                 for exp in all_exps:
@@ -771,11 +878,19 @@ class OutputGenerator:
                         results = json.loads(exp.results_json)
                     except (json.JSONDecodeError, ValueError):
                         continue
+                    if not isinstance(results, dict):
+                        continue
                     primary_val = results.get(_primary)
                     if primary_val is None:
                         continue
                     try:
                         primary_float = float(primary_val)
+                        if math.isnan(primary_float) or math.isinf(primary_float):
+                            continue
+                        # Sanity cap for ratio metrics (sharpe, sortino) — not for
+                        # absolute metrics (throughput, wall_clock_seconds)
+                        if _primary in ("sharpe", "sortino") and abs(primary_float) > 100:
+                            continue
                     except (ValueError, TypeError):
                         primary_float = None
 
@@ -833,40 +948,65 @@ class OutputGenerator:
         # --- Comparison: top models vs baselines ---
         comparison: list[dict[str, Any]] = []
         if rows and experiments.get("top_models"):
+            # Build baseline column-name variants (strip/add _next_day suffix),
+            # generalizing beyond the sharpe special case.
+            _baseline_keys: list[str] = [_primary]
+            if _primary.endswith("_next_day"):
+                base = _primary[: -len("_next_day")]
+                if base and base not in _baseline_keys:
+                    _baseline_keys.append(base)
+            else:
+                next_day = f"{_primary}_next_day"
+                if next_day not in _baseline_keys:
+                    _baseline_keys.append(next_day)
             all_baseline_vals = []
             for r in rows:
-                s = self._get_metric(r, [_primary])
+                s = self._get_metric(r, _baseline_keys)
                 try:
-                    all_baseline_vals.append(float(s))
+                    v = float(s)
+                    if not math.isnan(v) and not math.isinf(v):
+                        all_baseline_vals.append(v)
                 except (ValueError, TypeError):
                     pass
-
+            # Use None (not 0) when no usable baselines — 0 is a plausible real
+            # value for many metrics, so falling back to it produced spurious
+            # beats_best / beats_avg comparisons.
             if all_baseline_vals:
-                best_baseline = (max if _direction == "maximize" else min)(all_baseline_vals)
-                avg_baseline = sum(all_baseline_vals) / len(all_baseline_vals)
+                best_baseline_val: float | None = (
+                    min(all_baseline_vals) if _direction == "minimize"
+                    else max(all_baseline_vals)
+                )
+                avg_baseline_val: float | None = sum(all_baseline_vals) / len(all_baseline_vals)
             else:
-                best_baseline = 0
-                avg_baseline = 0
+                best_baseline_val = None
+                avg_baseline_val = None
 
             for model in experiments["top_models"][:5]:
-                model_val = model.get(_primary)
-                if model_val is not None:
-                    if _direction == "maximize":
-                        beats = model_val > best_baseline
-                    else:
-                        beats = model_val < best_baseline
-                    comparison.append({
-                        "name": model["name"],
-                        "model_primary": model_val,
-                        "best_baseline": round(best_baseline, 4),
-                        "avg_baseline": round(avg_baseline, 4),
-                        "beats_best_baseline": beats,
-                    })
+                model_primary = model.get(_primary)
+                if model_primary is None:
+                    continue
+                entry: dict[str, Any] = {
+                    "name": model["name"],
+                    "model_primary_metric": model_primary,
+                    "primary_metric_name": _primary,
+                }
+                if best_baseline_val is not None:
+                    entry["best_baseline"] = round(best_baseline_val, 4)
+                    entry["beats_best_baseline"] = (
+                        model_primary < best_baseline_val if _direction == "minimize"
+                        else model_primary > best_baseline_val
+                    )
+                if avg_baseline_val is not None:
+                    entry["avg_baseline"] = round(avg_baseline_val, 4)
+                    entry["beats_avg_baseline"] = (
+                        model_primary < avg_baseline_val if _direction == "minimize"
+                        else model_primary > avg_baseline_val
+                    )
+                comparison.append(entry)
 
         report["comparison"] = comparison
 
         # Timestamp
-        import time
         report["generated_at"] = time.time()
 
         return report
@@ -877,6 +1017,11 @@ class OutputGenerator:
             return None
         try:
             v = float(val)
+            # Reject NaN/Inf explicitly so they don't leak into JSON/reports;
+            # abs(nan)<1e10 happens to evaluate false, but isfinite is what
+            # we actually mean here.
+            if not math.isfinite(v):
+                return None
             return round(v, 4) if abs(v) < 1e10 else None
         except (ValueError, TypeError):
             return None

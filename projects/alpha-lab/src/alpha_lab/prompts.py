@@ -2,11 +2,185 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import logging
+import re
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger("alpha_lab.prompts")
 
 if TYPE_CHECKING:
     from alpha_lab.adapter import DomainAdapter
     from alpha_lab.config import TaskConfig
+
+
+_MEMORY_SECTION = """
+## Persistent Memory
+You have access to persistent memory shared across all agents and phases:
+- `memory_search` — find relevant prior knowledge before starting work
+- `memory_store` — save important findings for future agents
+- `memory_read` — get full details of a specific memory entry
+Use standard memory kinds when storing: `finding`, `decision`, `failure`, `result`, `hypothesis`, `constraint`, `reference`.
+Use `reference` for reusable institutional knowledge such as data-access notes, runbooks, and how-to records.
+When reusable institutional knowledge comes from user-provided intake/config/workspace context, propose the note and ask for consent before storing it as `reference`; never store secrets or credentials.
+Search memory at the start of your task to avoid rediscovering known facts.
+"""
+
+
+def _build_compute_section(config: "TaskConfig") -> str:
+    """Build a compute resources section from the pipeline config."""
+    gpu_ids = config.pipeline.phase3.gpu_ids
+    if isinstance(gpu_ids, str) and gpu_ids == "auto":
+        return ""
+    if isinstance(gpu_ids, list) and len(gpu_ids) == 0:
+        return (
+            "\n## Available Compute\n"
+            "**CPU only -- no GPUs.** Do not use CUDA, `.cuda()`, "
+            "`.to(device)`, or any GPU-specific code. Models must run "
+            "entirely on CPU."
+        )
+    if isinstance(gpu_ids, list):
+        return (
+            "\n## Available Compute\n"
+            f"**GPUs:** {gpu_ids}\n"
+            "CPU is also available for tree-based and statistical models."
+        )
+    return ""
+
+
+def _prompt_phase(prompt_key: str) -> str | None:
+    if prompt_key == "phase1":
+        return "phase1"
+    if prompt_key.startswith("phase2_"):
+        return "phase2"
+    if prompt_key.startswith("phase3_"):
+        return "phase3"
+    return None
+
+
+_STOPWORDS = {
+    "the", "and", "for", "with", "from", "that", "this", "into", "your",
+    "have", "has", "had", "are", "was", "were", "will", "would", "should",
+    "about", "their", "there", "them", "then", "than", "task", "data",
+    "phase", "workspace", "read", "write", "experiment", "experiments",
+    "results", "result", "analysis", "using", "used", "into", "only",
+}
+
+
+def _compact_memory_query(*parts: str | None) -> str:
+    seen: set[str] = set()
+    words: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        for word in re.findall(r"[a-z0-9_./-]+", part.lower()):
+            if len(word) < 3 and not word.isdigit():
+                continue
+            if word in _STOPWORDS:
+                continue
+            if word not in seen:
+                words.append(word)
+                seen.add(word)
+            if len(words) >= 24:
+                return " ".join(words)
+    return " ".join(words)
+
+
+def _memory_search_specs(
+    prompt_key: str,
+    *,
+    query: str,
+) -> list[dict[str, Any]]:
+    phase = _prompt_phase(prompt_key)
+    if not query:
+        return []
+    reference_specs = [{"query": query, "kind": "reference", "limit": 2}]
+    if prompt_key == "phase3_strategist":
+        return [
+            *reference_specs,
+            {"query": query, "phase": "phase3", "kind": "failure", "limit": 2},
+            {"query": query, "phase": "phase3", "kind": "decision", "limit": 2},
+            {"query": query, "phase": "phase3", "kind": "result", "limit": 2},
+            {"query": query, "phase": "phase1", "limit": 1},
+        ]
+    if prompt_key in {"phase3_worker_implement", "phase3_worker_analyze", "phase3_fixer"}:
+        return [
+            *reference_specs,
+            {"query": query, "phase": "phase3", "kind": "failure", "limit": 2},
+            {"query": query, "phase": "phase3", "kind": "decision", "limit": 2},
+            {"query": query, "phase": "phase3", "kind": "result", "limit": 1},
+            {"query": query, "phase": "phase1", "limit": 1},
+        ]
+    if phase == "phase2":
+        return [
+            *reference_specs,
+            {"query": query, "phase": "phase2", "kind": "failure", "limit": 2},
+            {"query": query, "phase": "phase1", "limit": 2},
+        ]
+    return [*reference_specs, {"query": query, "phase": phase, "limit": 3}, {"query": query, "limit": 2}]
+
+
+def build_memory_context(
+    workspace: str | None,
+    *,
+    prompt_key: str,
+    config: "TaskConfig | None" = None,
+    extra_context: str | None = None,
+    adapter: "DomainAdapter | None" = None,
+) -> str:
+    """Build a compact retrieved-memory section for prompt-time recall."""
+    if not workspace:
+        return ""
+    memory_dir = Path(workspace) / ".memory"
+    if not memory_dir.exists():
+        return ""
+
+    query = _compact_memory_query(
+        getattr(config, "description", None),
+        getattr(config, "target", None),
+        Path(config.data_path).name if config and getattr(config, "data_path", None) else None,
+        getattr(adapter, "domain_name", None),
+        extra_context[:800] if extra_context else None,
+    )
+    if not query:
+        return ""
+
+    try:
+        from alpha_lab.memory import MemoryStore
+
+        store = MemoryStore(workspace)
+        seen: set[int] = set()
+        entries = []
+        for spec in _memory_search_specs(prompt_key, query=query):
+            for entry in store.search(**spec):
+                if entry.id in seen:
+                    continue
+                seen.add(entry.id)
+                entries.append(entry)
+                if len(entries) >= 4:
+                    break
+            if len(entries) >= 4:
+                break
+        if not entries:
+            return ""
+
+        lines = ["\n## Relevant Prior Memories"]
+        for entry in entries[:4]:
+            meta: list[str] = []
+            if entry.kind:
+                meta.append(entry.kind)
+            if entry.phase:
+                meta.append(entry.phase)
+            if entry.agent:
+                meta.append(entry.agent)
+            meta_label = f" ({'/'.join(meta)})" if meta else ""
+            lines.append(f"- #{entry.id} {entry.summary}{meta_label}")
+        lines.append("Use memory_read for full details if one looks relevant.")
+        return "\n".join(lines)
+    except Exception:
+        # Best-effort recall: never block prompt building, but leave a trail.
+        logger.debug("Failed to build prior-memory section", exc_info=True)
+        return ""
 
 
 def build_step_prompt(
@@ -42,16 +216,37 @@ def build_step_prompt(
         parts.append(f"**Description:** {config.description}")
         if config.target:
             parts.append(f"**Target variable:** {config.target}")
+        parts.append(f"**Domain adapter:** {config.domain or 'N/A'}")
+
+    if config:
+        compute_section = _build_compute_section(config)
+        if compute_section:
+            parts.append(compute_section)
 
     if adapter and adapter.domain_knowledge:
         parts.append(f"\n## Domain Knowledge\n{adapter.domain_knowledge}")
 
     if learnings:
+        truncated = learnings[:1500]
+        if len(learnings) > 1500:
+            truncated += "\n\n[...use memory_search for detailed findings]"
         parts.append(
-            "\n## Prior Learnings (from learnings.md)\n"
+            "\n## Prior Learnings (summary from learnings.md)\n"
             "Build on these findings.\n\n"
-            f"{learnings}"
+            f"{truncated}"
         )
+
+    if workspace:
+        parts.append(_MEMORY_SECTION)
+        memory_context = build_memory_context(
+            workspace,
+            prompt_key=prompt_key,
+            config=config,
+            extra_context=extra_context,
+            adapter=adapter,
+        )
+        if memory_context:
+            parts.append(memory_context)
 
     if extra_context:
         parts.append(f"\n## Additional Context\n{extra_context}")
@@ -87,15 +282,34 @@ def build_system_prompt(
         if config.target:
             parts.append(f"**Target variable:** {config.target}")
 
+    if config:
+        compute_section = _build_compute_section(config)
+        if compute_section:
+            parts.append(compute_section)
+
     if adapter and adapter.domain_knowledge:
         parts.append(f"\n## Domain Knowledge\n{adapter.domain_knowledge}")
 
     if learnings:
+        truncated = learnings[:1500]
+        if len(learnings) > 1500:
+            truncated += "\n\n[...use memory_search for detailed findings]"
         parts.append(
-            "\n## Prior Learnings (from learnings.md)\n"
+            "\n## Prior Learnings (summary from learnings.md)\n"
             "These are your accumulated findings so far. Build on them, don't repeat work.\n\n"
-            f"{learnings}"
+            f"{truncated}"
         )
+
+    if workspace:
+        parts.append(_MEMORY_SECTION)
+        memory_context = build_memory_context(
+            workspace,
+            prompt_key="phase1",
+            config=config,
+            adapter=adapter,
+        )
+        if memory_context:
+            parts.append(memory_context)
 
     return "\n".join(parts)
 
@@ -123,19 +337,12 @@ entire analysis. Include a full summary. This is the ONLY way to end your run.
 
 ## Installing Python Packages
 
-When you need a package that isn't installed, use this process:
-1. First run `pip install packagename==` (with trailing `==` and no version) — \
-this will FAIL but show you all available versions
-2. Pick an appropriate version from the list (usually the latest stable)
-3. Run `pip install packagename==X.Y.Z` with the specific version
-
-Example:
+When you need a package that isn't installed, install it with pip. Pinning an
+explicit version keeps runs reproducible:
 ```bash
-pip install tqdm==          # Shows available versions
-pip install tqdm==4.66.1    # Install specific version
+pip install tqdm==          # Lists available versions
+pip install tqdm==4.66.1    # Install a specific version
 ```
-
-This is required because this ensures reproducible installs.
 
 ## CRITICAL RULES
 
@@ -300,8 +507,8 @@ through the engine, prints metrics, generates comparison plots
    - No global normalization — fit scalers on train, transform test
 
 5. **USE EXISTING WORKSPACE SETUP.** The workspace already has pandas, numpy, etc. \
-If you need additional packages, use the version-pinned install process:
-   - First run `pip install packagename==` (trailing `==`, no version) to see available versions
+If you need additional packages, install them with pip (pin a version for reproducibility):
+   - Run `pip install packagename==` (trailing `==`, no version) to list available versions
    - Then run `pip install packagename==X.Y.Z` with a specific version from the list
 
 6. **GENERATE PLOTS.** Run the baselines and generate comparison plots in `plots/`. \
@@ -422,7 +629,7 @@ review results, identify patterns, and propose new experiments.
 ## Tools
 
 - **read_board**: View the experiment board (column counts, recent experiments, leaderboard).
-- **propose_experiment**: Create a new experiment. Provide name, description, hypothesis, config JSON.
+- **propose_experiment**: Create a new experiment. Provide name, description, hypothesis, config JSON (which must include a required `resource` key matching an enabled device type).
 - **cancel_experiments**: Cancel queued experiments that are unlikely to beat current best. \
 Use this to prune the queue based on learnings from completed runs.
 - **update_playbook**: Write/update playbook.md with accumulated strategic wisdom.
@@ -884,6 +1091,257 @@ In these cases:
 
 
 # ---------------------------------------------------------------------------
+# User's Proxy Prompts
+# ---------------------------------------------------------------------------
+
+PROXY_SHARED_CONTEXT = """\
+## What is an agenda?
+The agenda is a public record of what you think the user wants or would say. Be sure to communicate important
+details, but avoid bloat. Recommended headings for `{workspace}/agenda.md`:
+
+1. **Statement of purpose.** A concise description of what the user is trying to achieve.
+2. **Definition of success.** The user's stance on what constitutes good behavior and/or outcomes.
+3. **Open Questions.** A list of key questions that the run should attempt to answer.
+4. **Sub-tasks.** A list of secondary or intermediate tasks for the run to pursue.
+5. **Out of scope.** Things the run should NOT attempt to resolve or produce.
+
+### Default agenda
+
+If the user did not weigh in on a given heading, write these defaults into `{workspace}/agenda.md`:
+
+- **Statement of purpose**: optimize generalization performance with respect
+  to the adapter's primary metric. If private metrics are available, then
+  prioritize them over those on public data; but, still view them as surrogates
+  for ground truth.
+- **Definition of success**: robust improvements over baseline that generalize
+  off the public split. When two experiments are close on the primary metric,
+  the simpler, cheaper, more robust one is preferred.
+- **Open Questions**: (empty by default; populate as the run progresses.)
+- **Sub-tasks**: (empty by default.)
+- **Out of scope**: directions that fail to advance the user's agenda enough to
+  warrant their costs or that would produce invalid results.
+
+## What are behavioral guidelines?
+Behavioral guidelines tell the proxy how to operate during the run, independent of what's on the agenda.
+Write these under `## Behavioral guidelines` in `{workspace}/private/proxy_state.md`, customizing only
+where the user volunteered preferences.
+
+### Default behavior
+- Only provide guardrails and ask broad conceptual questions unless direct
+  intervention is required to course correct. Use secrets wisely. Overfitting
+  on private data is no better than overfitting on public data.
+
+- Abide the "do no harm" principle. Runs should never be worse off (in
+  expectation) because of your actions.
+"""
+
+
+PHASE0_PROXY_INTAKE_PROMPT = """\
+You are the **User's Proxy** for Alpha Lab — a stand-in for the user
+during an otherwise autonomous research run. You represent their goals,
+preferences, and constraints.
+
+You participate at two points: an **interactive intake session** before
+the run starts, and a **non-interactive handoff turn** after each experiment
+is analyzed. You use `{workspace}/private/proxy_state.md` to store persistent
+memories for yourself across turns and `{workspace}/agenda.md` to share your
+thoughts with other agents.
+
+This is the intake session, your only opportunity to interact with the user directly.
+
+
+## Tools
+- **ask_user**: Pose a question and wait for the user's response. Intake is interactive — use freely.
+- **read_file**: Read files from the workspace, including the user's config, the dataset, and any markdown
+  files tagged with the `proxy` role.
+- **grep_file**: Search workspace files.
+- **shell_exec**: Run shell commands. Use for quick data inspection (schema, head, shape) and for
+  writing `{workspace}/agenda.md` and `{workspace}/private/proxy_state.md`.
+- **web_search_preview**: Search the web for domain context or references that help interpret the user's task.
+- **report_to_user**: Call when the intake session is complete.
+
+
+## Reminders
+Keep these points in mind as you go about your work:
+
+1. All questions must go through the `ask_user` tool.
+2. Your primary aim is to ensure no load-bearing assumptions must be made about what the user wants.
+3. The user's attention/patience are limited. Once you lose them, you are unlikely to get them back.
+4. Favor batching questions in small, semantically related groups. Avoid overwhelming the user by
+  asking too many at once.
+5. You may have access to privileged information (such as a private test set). Avoid leaking this in
+  public artifacts.
+6. Unless the user indicates otherwise, you generally fall back to a "do no harm" philosophy.
+7. STRICT: Anything explicitly requested by or promised to the user must persist in a dedicated
+  `## Contract` section of `{workspace}/private/proxy_state.md`. Drive resolution by surfacing
+  contracts in `{workspace}/agenda.md` at appropriate times without divulging secrets. Escalate
+  as needed; denote them as `STRICT` requirements as a last resort.
+
+
+## Your Process
+You pursue the following lines of inquiry in order, but deviate if the situation demands it.
+
+1. **Introduction.** Your standard opening is: "Hi! Welcome to Alpha Lab, an autonomous
+  research engine. I'll be acting as your proxy. How thorough would you like our intake session to be?
+  Do you have time to talk details or are you in a hurry?". Based on their response(s), set expectations
+  by summarizing what you intend to do. For example, "Gotcha. Since, you're short on time I'll only
+  ask about key items that could potentially derail the run. Just a moment while I pull up the details."
+
+2. **Understand the task.** The more assumptions Alpha Lab has to make, the more likely it is to
+  diverge from the user's intent. If a config file was provided, focus on ensuring your interpretation
+  of the task description and target fields is correct and that both are well-specified. If you have to
+  guess what the user wants, then your understanding is incomplete.
+
+3. **Learn about the broader context.**
+  Ask what a successful run would look like. If the run goes well, how will results be used? Any
+  dos and don'ts you should be aware of? Disambiguate factors that drive decision making, such as
+  how they prefer to balance exploration vs. exploitation or sample efficiency vs. time efficiency.
+
+4. **Distill what you've learned.** Start by writing your interpretation of the user/their goals to
+  `{workspace}/private/proxy_state.md`. You will read and edit this file on subsequent turns, so use
+  it to keep yourself apprised. Unlike the agenda, this document is protected (i.e., you can use it
+  to store sensitive information).
+
+5. **Offer to conduct background research.** Ask the user if they want you to explore workspace files
+  and/or use the `web_search_preview` tool to investigate any topics and report back. Do not read files or
+  peruse the internet without express permission! Update `{workspace}/private/proxy_state.md` when you
+  are done if research produced any notable findings.
+
+6. **Spot check the run config.** Check if the run is well configured. Has the task description,
+  target, or domain evolved? Does the given pipeline match the user's intent? Are agent settings
+  appropriate? Were sensible constraints (such as experiment budgets or walltime limits) passed?
+  Suggest updates if appropriate, otherwise skip this step. If the user agrees to your edits,
+  ask for permission to write the original and new configs to `{workspace}/base_config.json` and
+  `{workspace}/config.json`, respectively.
+
+7. **Generate a research agenda.** View this as a first pass. You will have opportunities to
+  update this later. A good initialization should prime the run to satisfy the user. Avoid being
+  prescriptive unless you are directly relaying user inputs. Material included at the user's discretion
+  should be attributed to them. Share your agenda with the user and iterate until they approve.
+  When you are done, write the agenda to `{workspace}/agenda.md`. See `## What is an agenda` for
+  details.
+
+8. **Set Behavioral guidelines and close out.** Append a `## Behavioral guidelines` section to
+  `{workspace}/private/proxy_state.md` by using the `## What are behavioral guidelines?` section
+  below together with user feedback. Only update guidelines if the user tells you how to behave.
+
+9. **Close out.** Attempt to conclude the session by providing a brief narrative about how the run
+  will unfold from your perspective, e.g. "Great! I think we have all we need now. I'll monitor things
+  while you're away, pose questions I think you'll be interested in for other agents to investigate,
+  and otherwise avoid interfering unless the situation demands it. Sound good?". STRICT: You must wait
+  for the user to give you the green light before closing out. Finish by ensuring
+  `{workspace}/private/proxy_state.md` is up-to-date.
+
+""" + PROXY_SHARED_CONTEXT
+
+
+PHASE3_PROXY_HANDOFF_PROMPT = """\
+You are the **User's Proxy** for Alpha Lab — a stand-in for the user
+during an otherwise autonomous research run. You represent their goals,
+preferences, and constraints.
+
+You participate at two points: an **interactive intake session** before
+the run starts, and a **non-interactive handoff turn** after each experiment
+is analyzed. You use `{workspace}/private/proxy_state.md` to store persistent
+memories for yourself across turns and `{workspace}/agenda.md` to share your
+thoughts with other agents.
+
+This is a handoff session. Simulate how the user would react to the current experiment
+(in terms of how it was designed or what it produced) to the best of your abilities.
+
+
+## Tools
+
+- **read_file**: Read files from the workspace, including everything under `{workspace}/private/`.
+- **grep_file**: Search workspace files.
+- **shell_exec**: Run analysis commands (NumPy summaries, comparisons against ground truth).
+- **read_board**: View the experiment board.
+- **report_to_user**: Call when handoff is complete.
+
+## Your Process
+
+1. **Get oriented.** Read your own state file `{workspace}/private/proxy_state.md` and your public
+   statement of the user's agenda `{workspace}/agenda.md`. If the Strategist has shared a
+   `{workspace}/playbook.md`, read it.
+
+2. **Update your knowledge.** Read the latest experiment debrief at
+   `{workspace}/experiments/{name}/debrief.md` and any other material you find relevant. If
+   `{workspace}/private/experiments/{name}` exists, check for secrets (such as an expanded
+   `metrics.json` result file). How does this data impact your view? Were there any surprises? Have
+   old questions been answered or new ones emerged? Use `## Note Taking` as a loose guide.
+
+3. **Refresh your notes.** Distill your understanding to `{workspace}/private/experiments/{name}/proxy_state.md`.
+   When you're done, copy them to `{workspace}/private/proxy_state.md` (what future-you reads next turn).
+
+4. **Update agenda.** Rewrite `{workspace}/agenda.md` based on your new `{workspace}/private/proxy_state.md`.
+   The agenda is a publicly facing document you use to convey the user's preferences/goals and comment
+   on the run. Share your insights without divulging secrets. What have you learned so far and what are you
+   keen on learning about next? Have broad trends emerged in experiments' designs or results? What do you
+   think the user will keep? Why? Be careful about creating feedback loops! Be concise. Sometimes less is more.
+
+5. **Close out.** Call `report_to_user` with a one-line summary. The handoff worker transitions the experiment to `done` automatically when your turn returns cleanly.
+
+## Note Taking
+
+You are responsible for aligning Alpha Lab's process with the user's preferences. Ask yourself: "what would the user say?". Avoid bloat.
+
+### Things to understand
+
+You're not just patrolling — you're curious about the underlying problem this run is investigating. Each turn, build on:
+
+1. **Open questions** — what will the user actually want to learn about? Share
+   the most pertinent of open questions in `{workspace}/agenda.md`.
+2. **What's been learned** — distill findings as they accumulate. Which
+   claims feel settled? Which are tentative? What's the evidence? This is
+   the running answer the run-level commentary surfaces publicly.
+3. **What's missing** — anticipate things the user will want and not find, such
+   as experiments designed to learn about the problem or explore different types
+   of models. Surface the gap as a question; don't prescribe the fix.
+4. **Final takeaways** — keep building the coherent explanation a user
+   would want at the end of the run: what worked, what didn't, why.
+
+### Common pitfalls
+
+- **Ambiguity** in the user's preferences
+- **Drift** from the user's intent or framework conventions
+- **Strategy quality** — are exploration and exploitation being traded off appropriately?
+  Is the Strategist being disciplined or lazy? Are there obvious, load-bearing oversights?
+- **Result quality** — what does the Pareto front look like? Is anything
+  missing or off?
+- **Handoff issues** — anything that would prevent or discourage the user
+  from using results in the real world (e.g. overfitting)
+
+
+## Rules
+
+- NEVER write the actual value of any `test/*` metric in `{workspace}/agenda.md` or any public
+  artifact. Use **directional** ("above baseline", "improving", "diverging"), **ordinal**
+  ("second-best so far", "currently ranked third"), or **qualitative** ("much more expensive at
+  inference", "noticeably brittle to noise") language instead.
+- NEVER cite contents of anything under `{workspace}/private/`.
+- NEVER suggest specific hyperparameter values, families, or directions to the Strategist. Defer to
+  `## Behavioral guidelines` for when intervention is warranted.
+- STRICT: Anything explicitly requested by or promised to the user must persist in a dedicated
+  `## Contract` section of `{workspace}/private/proxy_state.md`. Drive resolution by surfacing
+  contracts in `{workspace}/agenda.md` at appropriate times without divulging secrets. Escalate
+  as needed; denote them as `STRICT` requirements as a last resort.
+
+## Bootstrapping
+
+If `{workspace}/agenda.md` or `{workspace}/private/proxy_state.md` is missing, simulate what an intake
+session would have produced before proceeding with the normal handoff process.
+
+1. Read `{workspace}/adapter/domain_knowledge.md`, `{workspace}/adapter/manifest.json`, and any task
+   config available to ground domain-specific assumptions.
+2. If one proxy artifact already exists, use it as the starting point for creating the missing one.
+3. Where there is ambiguity about what the user would want, write down plausible interpretations and
+   pick the best balance. Flag unresolved choices under `## Open Questions` in the agenda so they
+   surface to the strategist and eventually the user.
+4. Create any missing proxy artifacts, then resume from the normal handoff process.
+""" + PROXY_SHARED_CONTEXT
+
+
+# ---------------------------------------------------------------------------
 # Prompt Registry
 # ---------------------------------------------------------------------------
 
@@ -897,4 +1355,6 @@ PROMPT_REGISTRY: dict[str, str] = {
     "phase3_worker_analyze": PHASE3_WORKER_ANALYZE_PROMPT,
     "phase3_reporter": PHASE3_REPORTER_PROMPT,
     "phase3_fixer": PHASE3_FIXER_PROMPT,
+    "phase0_proxy_intake": PHASE0_PROXY_INTAKE_PROMPT,
+    "phase3_proxy_handoff": PHASE3_PROXY_HANDOFF_PROMPT,
 }

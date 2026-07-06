@@ -1,0 +1,98 @@
+#!/bin/bash
+# Generate synthetic exchange-rate data and produce a ready-to-use config.
+#
+# Usage:
+#   scripts/generate-exchange-test-data --output-dir <path> [--config-template <path>]
+#
+# Options:
+#   --output-dir <path>       Directory to write exchange_rates.csv and config.json into (required)
+#   --config-template <path>  Template config to base the output on
+#                             (default: data/demo_exchange_config-template.json)
+#
+# Effects:
+#   1. Writes <output-dir>/exchange_rates.csv via `generate-synthetic-data`.
+#   2. Writes <output-dir>/config.json with data_path set to the absolute
+#      path of the generated CSV. The template is never modified.
+
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+REPO_ROOT="$(realpath "${SCRIPT_DIR}/..")"
+
+OUT_DIR=""
+TEMPLATE="${REPO_ROOT}/data/demo_exchange_config-template.json"
+
+usage() {
+    echo "usage: $0 [OPTIONS]"
+    echo "options:"
+    echo "  --output-dir <path>       Directory to write exchange_rates.csv and config.json into (required)"
+    echo "  --config-template <path>  Template config to base the output on (default: data/demo_exchange_config-template.json)"
+    echo "  -h, --help                Show this help message"
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        "--output-dir")
+            OUT_DIR="$2"
+            shift 2
+            ;;
+        "--config-template")
+            TEMPLATE="$2"
+            shift 2
+            ;;
+        "-h"|"--help")
+            usage
+            exit 0
+            ;;
+        "--")
+            shift
+            break
+            ;;
+        *)
+            echo "ERROR: unknown option - $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$OUT_DIR" ]; then
+    echo "ERROR: --output-dir is required" >&2
+    usage
+    exit 1
+fi
+
+
+set -e
+
+# Validate prerequisites
+for cmd in jq generate-synthetic-data; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "ERROR: '$cmd' not found on PATH." >&2
+        if [ "$cmd" = "generate-synthetic-data" ]; then
+            echo "Activate your venv (source scripts/setup-venv) so the console script is on PATH." >&2
+        fi
+        exit 1
+    fi
+done
+
+if [ ! -f "$TEMPLATE" ]; then
+    echo "ERROR: template config not found: $TEMPLATE" >&2
+    exit 1
+fi
+
+# 1. Generate the dataset
+echo ">>> Generating synthetic data into: $OUT_DIR"
+generate-synthetic-data --out-dir "$OUT_DIR"
+
+# Resolve to an absolute path so the config works regardless of CWD at run time.
+CSV_PATH="$(cd "$OUT_DIR" && pwd)/exchange_rates.csv"
+if [ ! -f "$CSV_PATH" ]; then
+    echo "ERROR: expected CSV not found at $CSV_PATH" >&2
+    exit 1
+fi
+
+# 2. Write config.json into the output directory (template is never modified)
+OUT_CONFIG="${OUT_DIR}/config.json"
+echo ">>> Writing config to: $OUT_CONFIG"
+jq --arg p "$CSV_PATH" '.data_path = $p' "$TEMPLATE" > "$OUT_CONFIG"
+
+echo ">>> Done. Use: python run.py --config ${OUT_CONFIG} --workspace <workspace>"

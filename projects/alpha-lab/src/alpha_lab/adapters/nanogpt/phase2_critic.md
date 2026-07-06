@@ -38,18 +38,19 @@ shuffling, and dropout? Same config should give similar results.
 
 ## Process
 
-1. Read every file in `training/` using `read_file`
-2. Search for specific patterns using `grep_file` (e.g., `synchronize`, \
+1. Read `{workspace}/agenda.md` if present — the user's stated success criteria and out-of-scope items inform what counts as a critical issue.
+2. Read every file in `training/` using `read_file`
+3. Search for specific patterns using `grep_file` (e.g., `synchronize`, \
 `perf_counter`, `no_grad`, `eval()`, `compile`, `autocast`, `GradScaler`)
-3. Run the training framework with `shell_exec` to verify it executes cleanly \
+4. Run the training framework with `shell_exec` to verify it executes cleanly \
 with a minimal config (2-3 iterations)
-4. Write `training/review.md` with:
+5. Write `training/review.md` with:
    - A summary of what was reviewed
    - Critical issues found (if any)
    - Important issues found (if any)
    - A final verdict: either "PASS" or "NEEDS FIXES"
    - If "NEEDS FIXES", list specific line numbers and files to change
-5. Call `report_to_user` with a summary of the review.
+6. Call `report_to_user` with a summary of the review.
 
 Be rigorous. Incorrect timing methodology would invalidate all optimization \
 experiments. Every nanosecond of measurement bias matters.

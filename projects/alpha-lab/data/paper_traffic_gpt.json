@@ -1,7 +1,7 @@
 {
-  "data_path": "data/traffic",
-  "description": "Road occupancy rates from 862 sensors on San Francisco Bay Area freeways, measured hourly. GluonTS-format: train/data.json.gz and test/data.json.gz, each line is one JSON object with keys 'target' (array of hourly occupancy values), 'start' (timestamp), 'item_id', 'feat_static_cat'. 862 series, each ~14,036 hours (~17 months). Frequency: 1 hour. Prediction length: 24 hours. Values are already normalized to [0, 1] (occupancy ratios). Strong daily and weekly seasonality. Standard multivariate forecasting benchmark.",
-  "target": "Forecast hourly road occupancy 24 hours ahead for each sensor. Minimize RMSE as the primary metric. Also report MAE and MASE.",
+  "data_path": "/path/to/traffic",
+  "description": "Road occupancy rates from 862 sensors on San Francisco Bay Area freeways, measured hourly. GluonTS-format: train/data.json.gz and test/data.json.gz, each line is one JSON object with keys 'target' (array of hourly occupancy values), 'start' (timestamp), 'item_id', 'feat_static_cat'. 862 series, each ~14,036 hours (~17 months). Frequency: 1 hour. Prediction length: 24 hours. Values are already normalized to [0, 1] (occupancy ratios) — no scale heterogeneity. Strong daily seasonality (rush-hour peaks) and weekly seasonality (weekday vs weekend patterns). This is a standard multivariate forecasting benchmark used in Autoformer, FEDformer, PatchTST, iTransformer, TimesNet, and other forecasting papers.",
+  "target": "Forecast hourly road occupancy 24 hours ahead for each sensor. Minimize RMSE (root mean squared error) as the primary metric. Also report MAE and MASE. The goal is accurate point forecasts. Values are already normalized 0-1 so RMSE is directly interpretable and comparable across sensors. Interested in which model families (transformer-based like PatchTST/iTransformer/TFT, MLP-based like N-BEATS/N-HiTS/TSMixer, RNN-based like DeepAR/LSTM) perform best, whether cross-sensor information helps, and what context lengths capture rush-hour and weekly cycles best.",
   "domain": "time_series",
   "provider": "openai",
   "model": "gpt-5.2",

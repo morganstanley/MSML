@@ -1,0 +1,19 @@
+{
+  "domain_name": "blackbox",
+  "domain_description": "Black-box optimization: find the global minimum of an unknown function on [0,1]^d",
+  "metric": {
+    "primary_metric": "y",
+    "direction": "minimize",
+    "extract_key": "y",
+    "display_name": "y",
+    "secondary_metrics": []
+  },
+  "experiment": {
+    "required_files": ["run_experiment.py"],
+    "entry_point": "run_experiment.py",
+    "results_dir": "results",
+    "results_file": "metrics.json",
+    "framework_dir": "harness",
+    "framework_files": ["blackbox.py"]
+  }
+}

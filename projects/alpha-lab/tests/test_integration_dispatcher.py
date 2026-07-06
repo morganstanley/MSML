@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from alpha_lab import deps
+from alpha_lab.adapter import DomainAdapter
 from alpha_lab.config import Phase3Config, PipelineConfig, TaskConfig
 from alpha_lab.dispatcher import Dispatcher
 from alpha_lab.events import AgentEvent
@@ -39,7 +41,7 @@ class FakeSlurmManager(SlurmManager):
     def running_gpu_count(self) -> int:
         return sum(1 for s in self._jobs.values() if s in ("RUNNING", "PENDING"))
 
-    def can_submit(self) -> bool:
+    def can_submit(self, exp=None) -> bool:
         return self.running_gpu_count() + self.gpu_per_job <= self.max_gpus
 
     def advance_job(self, job_id: str, status: str) -> None:
@@ -49,7 +51,7 @@ class FakeSlurmManager(SlurmManager):
         self._jobs[job_id] = "CANCELLED"
 
 
-def _make_config() -> TaskConfig:
+def _make_config(worker_count: int = 2) -> TaskConfig:
     return TaskConfig(
         data_path="/tmp/fake_data",
         description="Test task",
@@ -57,31 +59,43 @@ def _make_config() -> TaskConfig:
             phases=["phase3"],
             phase3=Phase3Config(
                 max_experiments=100,
-                worker_count=2,
+                worker_count=worker_count,
                 strategist_interval=9999,  # don't auto-trigger
                 report_interval=9999,
+                cpu_enabled=False,  # GPU-only fake executor; no CPU pool
             ),
         ),
     )
+
+
+@pytest.fixture(autouse=True)
+def _close_leaked_deps():
+    """Close the RunDeps each ``_make_dispatcher`` opens, after the test runs."""
+    yield
+    d = deps.get(strict=False)
+    if d is not None:
+        d.close()
 
 
 def _make_dispatcher(
     db: ExperimentDB,
     slurm: FakeSlurmManager,
     workspace: str,
+    adapter: DomainAdapter,
     worker_count: int = 2,
 ) -> Dispatcher:
     events: list[AgentEvent] = []
-    config = _make_config()
+    config = _make_config(worker_count)
     provider = MagicMock()
+    # The dispatcher reads config + executors off the run deps; publish them for the
+    # test (the autouse fixture closes the scope afterward).
+    deps.RunDeps(config, gpu_executor=slurm).open()
     d = Dispatcher(
         provider=provider,
-        config=config,
         workspace=workspace,
         db=db,
-        executor=slurm,
         event_callback=lambda e: events.append(e),
-        worker_count=worker_count,
+        adapter=adapter,
     )
     d._events = events  # stash for assertions
     return d
@@ -90,9 +104,9 @@ def _make_dispatcher(
 class TestExperimentLifecycle:
     """Full kanban flow with patched worker functions and real DB."""
 
-    def test_experiment_lifecycle(self, tmp_workspace: str, db: ExperimentDB) -> None:
+    def test_experiment_lifecycle(self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter) -> None:
         slurm = FakeSlurmManager()
-        d = _make_dispatcher(db, slurm, tmp_workspace)
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
         d._init_log()
 
         # Create experiment
@@ -122,9 +136,9 @@ class TestExperimentLifecycle:
 
 
 class TestRecoverStaleWorkerAssignments:
-    def test_recover_releases_orphaned(self, tmp_workspace: str, db: ExperimentDB) -> None:
+    def test_recover_releases_orphaned(self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter) -> None:
         slurm = FakeSlurmManager()
-        d = _make_dispatcher(db, slurm, tmp_workspace)
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
 
         # Create experiments with orphaned worker assignments
         eid1 = db.create("orphan_a", "D", "H", "{}")
@@ -152,9 +166,9 @@ class TestRecoverStaleWorkerAssignments:
 
 
 class TestRecoverSlurmCompletedJobs:
-    def test_slurm_completed_during_downtime(self, tmp_workspace: str, db: ExperimentDB) -> None:
+    def test_slurm_completed_during_downtime(self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter) -> None:
         slurm = FakeSlurmManager()
-        d = _make_dispatcher(db, slurm, tmp_workspace)
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
 
         eid = db.create("slurm_done", "D", "H", "{}")
         db.update_status(eid, "implemented")
@@ -171,9 +185,9 @@ class TestRecoverSlurmCompletedJobs:
 
 
 class TestRecoverSlurmFailedJobs:
-    def test_slurm_failed_during_downtime(self, tmp_workspace: str, db: ExperimentDB) -> None:
+    def test_slurm_failed_during_downtime(self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter) -> None:
         slurm = FakeSlurmManager()
-        d = _make_dispatcher(db, slurm, tmp_workspace)
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
 
         eid = db.create("slurm_fail", "D", "H", "{}")
         db.update_status(eid, "implemented")
@@ -191,9 +205,9 @@ class TestRecoverSlurmFailedJobs:
 
 
 class TestRecoverSlurmRunningJobs:
-    def test_slurm_running_reconciles(self, tmp_workspace: str, db: ExperimentDB) -> None:
+    def test_slurm_running_reconciles(self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter) -> None:
         slurm = FakeSlurmManager()
-        d = _make_dispatcher(db, slurm, tmp_workspace)
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
 
         eid = db.create("slurm_run", "D", "H", "{}")
         db.update_status(eid, "implemented")
@@ -209,9 +223,9 @@ class TestRecoverSlurmRunningJobs:
 
 
 class TestRecoverSlurmPendingJobs:
-    def test_slurm_pending_stays_queued(self, tmp_workspace: str, db: ExperimentDB) -> None:
+    def test_slurm_pending_stays_queued(self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter) -> None:
         slurm = FakeSlurmManager()
-        d = _make_dispatcher(db, slurm, tmp_workspace)
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
 
         eid = db.create("slurm_pend", "D", "H", "{}")
         db.update_status(eid, "implemented")
@@ -225,10 +239,108 @@ class TestRecoverSlurmPendingJobs:
         assert db.get(eid).status == "queued"
 
 
-class TestGracefulShutdown:
-    def test_stop_joins_worker_threads(self, tmp_workspace: str, db: ExperimentDB) -> None:
+class TestRecoverMilestoneCounter:
+    def test_no_reports_dir_leaves_counter_at_zero(
+        self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter,
+    ) -> None:
         slurm = FakeSlurmManager()
-        d = _make_dispatcher(db, slurm, tmp_workspace)
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
+
+        summary = d.recover()
+        assert summary["report_counter"] == 0
+        assert d._report_number == 0
+
+    def test_restores_counter_to_max_existing_milestone(
+        self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter,
+    ) -> None:
+        slurm = FakeSlurmManager()
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
+
+        reports = Path(tmp_workspace) / "reports"
+        for n in (1, 2, 5, 35):  # gaps allowed; takes max
+            (reports / f"milestone_{n:03d}").mkdir(parents=True)
+
+        summary = d.recover()
+        assert summary["report_counter"] == 35
+        assert d._report_number == 35
+        assert d._current_report_number == 35
+
+    def test_ignores_non_milestone_and_non_numeric_dirs(
+        self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter,
+    ) -> None:
+        slurm = FakeSlurmManager()
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
+
+        reports = Path(tmp_workspace) / "reports"
+        (reports / "milestone_007").mkdir(parents=True)
+        (reports / "milestone_final").mkdir()  # non-numeric suffix
+        (reports / "scratch").mkdir()  # wrong prefix
+        (reports / "milestone_042.txt").touch()  # not a directory
+
+        summary = d.recover()
+        assert summary["report_counter"] == 7
+        assert d._report_number == 7
+
+    def test_reports_path_that_is_a_file_returns_zero(
+        self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter,
+    ) -> None:
+        slurm = FakeSlurmManager()
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
+
+        # reports/ exists but as a regular file, not a directory
+        (Path(tmp_workspace) / "reports").write_text("not a dir")
+
+        # Must not raise NotADirectoryError inside recover()
+        summary = d.recover()
+        assert summary["report_counter"] == 0
+        assert d._report_number == 0
+
+    def test_iterdir_oserror_returns_zero(
+        self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter,
+    ) -> None:
+        slurm = FakeSlurmManager()
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
+
+        (Path(tmp_workspace) / "reports" / "milestone_042").mkdir(parents=True)
+
+        # Patch iterdir to simulate a permission error or race condition
+        with patch(
+            "alpha_lab.dispatcher.Path.iterdir",
+            side_effect=OSError("Permission denied"),
+        ):
+            summary = d.recover()
+        assert summary["report_counter"] == 0
+        assert d._report_number == 0
+
+    def test_aligns_last_report_done_count_after_recovery(
+        self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter,
+    ) -> None:
+        slurm = FakeSlurmManager()
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
+
+        (Path(tmp_workspace) / "reports" / "milestone_012").mkdir(parents=True)
+
+        # Seed 3 done + 2 analyzed experiments
+        for i, status in enumerate(("done", "done", "done", "analyzed", "analyzed"), 1):
+            eid = db.create(f"exp_{i}", "D", "H", "{}")
+            for s in ("implemented", "checked", "queued", "running", "finished"):
+                db.update_status(eid, s)
+            if status == "analyzed":
+                db.update_status(eid, "analyzed")
+            else:
+                db.update_status(eid, "analyzed")
+                db.update_status(eid, "done")
+
+        d.recover()
+        assert d._report_number == 12
+        # Aligned to current done+analyzed so we don't re-fire immediately
+        assert d._last_report_at_done_count == 5
+
+
+class TestGracefulShutdown:
+    def test_stop_joins_worker_threads(self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter) -> None:
+        slurm = FakeSlurmManager()
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
 
         # Simulate a busy worker with a short-lived thread
         done = threading.Event()
@@ -249,9 +361,9 @@ class TestGracefulShutdown:
 
 
 class TestCleanupReleasesAssignments:
-    def test_cleanup_releases_all(self, tmp_workspace: str, db: ExperimentDB) -> None:
+    def test_cleanup_releases_all(self, tmp_workspace: str, db: ExperimentDB, adapter: DomainAdapter) -> None:
         slurm = FakeSlurmManager()
-        d = _make_dispatcher(db, slurm, tmp_workspace)
+        d = _make_dispatcher(db, slurm, tmp_workspace, adapter)
 
         # Create experiments with worker assignments
         eid1 = db.create("cleanup_a", "D", "H", "{}")

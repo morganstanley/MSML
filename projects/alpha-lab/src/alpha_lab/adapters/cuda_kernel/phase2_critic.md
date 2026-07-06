@@ -38,13 +38,14 @@ to `harness/review.md`.
 
 ## Process
 
-1. Read every file in `harness/` using `read_file`
-2. Search for specific patterns using `grep_file`:
+1. Read `{workspace}/agenda.md` if present — the user's stated success criteria and out-of-scope items inform what counts as a critical issue.
+2. Read every file in `harness/` using `read_file`
+3. Search for specific patterns using `grep_file`:
    - `load_inline` — verify correct usage
    - `torch.cuda.synchronize` — verify timing accuracy
    - `torch.allclose` — verify correctness checking
    - `torch.compile` — verify warmup handling
    - `time.perf_counter` — verify timing methodology
-3. Check that `evaluate.py` handles the full lifecycle: load → compile → correctness → timing → save
-4. Write `harness/review.md` with findings and verdict: "PASS" or "NEEDS FIXES"
-5. Call `report_to_user` with a summary
+4. Check that `evaluate.py` handles the full lifecycle: load → compile → correctness → timing → save
+5. Write `harness/review.md` with findings and verdict: "PASS" or "NEEDS FIXES"
+6. Call `report_to_user` with a summary

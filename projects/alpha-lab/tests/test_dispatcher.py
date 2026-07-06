@@ -11,6 +11,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from alpha_lab import deps
+from alpha_lab.adapter import DomainAdapter
 from alpha_lab.config import Phase3Config, PipelineConfig, TaskConfig
 from alpha_lab.dispatcher import Dispatcher
 from alpha_lab.events import AgentEvent
@@ -58,17 +60,20 @@ def dispatcher(
     mock_slurm: MagicMock,
     events: list[AgentEvent],
     tmp_workspace: str,
-) -> Dispatcher:
+    adapter: DomainAdapter,
+):
     provider = MagicMock()
-    return Dispatcher(
-        provider=provider,
-        config=config,
-        workspace=tmp_workspace,
-        db=db,
-        executor=mock_slurm,
-        event_callback=lambda e: events.append(e),
-        worker_count=2,
-    )
+    # The dispatcher reads config + executors off the run deps; inject the mock GPU
+    # executor and keep the scope active for the test's duration (no CPU pool).
+    config.pipeline.phase3.cpu_enabled = False
+    with deps.RunDeps(config, gpu_executor=mock_slurm):
+        yield Dispatcher(
+            provider=provider,
+            workspace=tmp_workspace,
+            db=db,
+            event_callback=lambda e: events.append(e),
+            adapter=adapter,
+        )
 
 
 class TestDispatcherStrategistTrigger:
@@ -195,6 +200,61 @@ class TestDispatcherPollSlurm:
 
 
 class TestDispatcherAssignWorkers:
+    def test_prioritizes_handoff_when_enabled(
+        self, dispatcher: Dispatcher, db: ExperimentDB, config: TaskConfig,
+    ) -> None:
+        # Same object RunDeps holds (function-scoped fixture); the dispatcher reads
+        # the flag off the run deps, not off itself.
+        config.pipeline.phase3.no_handoff = False
+        analyzed_id = db.create("analyzed_exp", "D", "H", "{}")
+        for status in ("implemented", "checked", "queued"):
+            db.update_status(analyzed_id, status)
+        db.update_status(analyzed_id, "running", started_at=1000.0)
+        db.update_status(analyzed_id, "finished", finished_at=2000.0)
+        db.update_status(analyzed_id, "analyzed")
+
+        finished_id = db.create("finished_exp", "D", "H", "{}")
+        for status in ("implemented", "checked", "queued"):
+            db.update_status(finished_id, status)
+        db.update_status(finished_id, "running", started_at=1000.0)
+        db.update_status(finished_id, "finished", finished_at=2000.0)
+
+        for w in dispatcher.workers:
+            w._thread = None
+
+        handoff_calls = []
+        analyze_calls = []
+        implement_calls = []
+        for w in dispatcher.workers:
+            w.handoff = lambda exp, w=w, **kw: handoff_calls.append(exp.id)
+            w.analyze = lambda exp, w=w, **kw: analyze_calls.append(exp.id)
+            w.implement = lambda exp, w=w, **kw: implement_calls.append(exp.id)
+
+        dispatcher._assign_workers()
+
+        assert handoff_calls == [analyzed_id]
+        assert analyze_calls == [finished_id]
+        assert implement_calls == []
+
+    def test_skips_handoff_by_default(
+        self, dispatcher: Dispatcher, db: ExperimentDB,
+    ) -> None:
+        analyzed_id = db.create("analyzed_exp", "D", "H", "{}")
+        for status in ("implemented", "checked", "queued"):
+            db.update_status(analyzed_id, status)
+        db.update_status(analyzed_id, "running", started_at=1000.0)
+        db.update_status(analyzed_id, "finished", finished_at=2000.0)
+        db.update_status(analyzed_id, "analyzed")
+
+        for w in dispatcher.workers:
+            w._thread = None
+            w.handoff = MagicMock()
+
+        dispatcher._assign_workers()
+
+        for w in dispatcher.workers:
+            w.handoff.assert_not_called()
+
     def test_prioritizes_analyze_over_implement(
         self, dispatcher: Dispatcher, db: ExperimentDB,
     ) -> None:
@@ -216,8 +276,8 @@ class TestDispatcherAssignWorkers:
         analyze_calls = []
         implement_calls = []
         for w in dispatcher.workers:
-            w.analyze = lambda exp, w=w: analyze_calls.append(exp.id)
-            w.implement = lambda exp, w=w: implement_calls.append(exp.id)
+            w.analyze = lambda exp, w=w, **kw: analyze_calls.append(exp.id)
+            w.implement = lambda exp, w=w, **kw: implement_calls.append(exp.id)
 
         dispatcher._assign_workers()
 
@@ -237,8 +297,8 @@ class TestDispatcherAssignWorkers:
 
         implement_calls = []
         for w in dispatcher.workers:
-            w.implement = lambda exp, w=w: implement_calls.append(exp.id)
-            w.analyze = lambda exp, w=w: None
+            w.implement = lambda exp, w=w, **kw: implement_calls.append(exp.id)
+            w.analyze = lambda exp, w=w, **kw: None
 
         dispatcher._assign_workers()
 
@@ -334,3 +394,103 @@ class TestDispatcherBoardSummary:
         board_events = [e for e in events if isinstance(e, BoardSummaryEvent)]
         assert len(board_events) == 1
         assert "to_implement" in board_events[0].counts
+
+
+class TestDispatcherCrashed:
+    def test_crashed_initially_false(self, dispatcher: Dispatcher) -> None:
+        assert dispatcher.crashed is False
+
+    def test_crashed_true_after_unhandled_exception(
+        self, dispatcher: Dispatcher, events: list[AgentEvent],
+    ) -> None:
+        """run() swallows unhandled exceptions and exposes them via .crashed."""
+        from alpha_lab.events import PhaseEvent
+
+        with patch.object(dispatcher, "_poll_slurm", side_effect=RuntimeError("boom")):
+            dispatcher.run()
+
+        assert dispatcher.crashed is True
+        phase_events = [e for e in events if isinstance(e, PhaseEvent) and e.phase == "phase3"]
+        assert any(e.status == "error" for e in phase_events)
+
+
+class TestIsCpuExperiment:
+    """Unit tests for Dispatcher._is_cpu_experiment source-scan routing."""
+
+    def _make_exp(
+        self, dispatcher: Dispatcher, config_json: str = "{}",
+        files: dict[str, str] | None = None,
+    ):
+        from alpha_lab.experiment_db import Experiment
+        exp_id = dispatcher.db.create("t_cpu", "D", "H", config_json)
+        exp = dispatcher.db.get(exp_id)
+        if files is not None:
+            exp_dir = Path(dispatcher.workspace) / "experiments" / exp.name
+            exp_dir.mkdir(parents=True, exist_ok=True)
+            for name, contents in files.items():
+                (exp_dir / name).write_text(contents)
+        return exp
+
+    def test_explicit_resource_cpu_wins(self, dispatcher: Dispatcher) -> None:
+        """config.resource='cpu' forces CPU even if source has GPU markers."""
+        exp = self._make_exp(
+            dispatcher,
+            config_json='{"resource": "cpu"}',
+            files={"strategy.py": "import torch; torch.cuda.empty_cache()"},
+        )
+        assert dispatcher._is_cpu_experiment(exp) is True
+
+    def test_explicit_resource_gpu_wins(self, dispatcher: Dispatcher) -> None:
+        """config.resource='gpu' forces GPU even if source has no markers."""
+        exp = self._make_exp(
+            dispatcher,
+            config_json='{"resource": "gpu"}',
+            files={"strategy.py": "x = 1"},
+        )
+        assert dispatcher._is_cpu_experiment(exp) is False
+
+    def test_resource_non_string_falls_through_to_scan(self, dispatcher: Dispatcher) -> None:
+        """Non-string `resource` (null/number) falls through to source scan, not crash."""
+        exp = self._make_exp(
+            dispatcher,
+            config_json='{"resource": null}',
+            files={"strategy.py": "x = 1", "run_experiment.py": "y = 2"},
+        )
+        assert dispatcher._is_cpu_experiment(exp) is True
+
+    def test_scan_detects_torch_device(self, dispatcher: Dispatcher) -> None:
+        exp = self._make_exp(
+            dispatcher,
+            files={
+                "strategy.py": "device = torch.device('cuda')",
+                "run_experiment.py": "",
+            },
+        )
+        assert dispatcher._is_cpu_experiment(exp) is False
+
+    def test_scan_no_markers_means_cpu(self, dispatcher: Dispatcher) -> None:
+        exp = self._make_exp(
+            dispatcher,
+            files={
+                "strategy.py": "from sklearn.linear_model import Ridge\nmodel = Ridge()",
+                "run_experiment.py": "print('hello')",
+            },
+        )
+        assert dispatcher._is_cpu_experiment(exp) is True
+
+    def test_unreadable_source_defaults_to_gpu(self, dispatcher: Dispatcher) -> None:
+        """If declared source file exists but can't be decoded, assume GPU (safe default)."""
+        exp = self._make_exp(
+            dispatcher,
+            files={},
+        )
+        exp_dir = Path(dispatcher.workspace) / "experiments" / exp.name
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        (exp_dir / "strategy.py").write_bytes(b"\xff\xfe\x00\x00invalid-utf8")
+        (exp_dir / "run_experiment.py").write_bytes(b"\x00\x01\x02")
+        assert dispatcher._is_cpu_experiment(exp) is False
+
+    def test_no_source_files_defaults_to_gpu(self, dispatcher: Dispatcher) -> None:
+        """If no declared source files exist on disk, assume GPU (safe default)."""
+        exp = self._make_exp(dispatcher, files={})
+        assert dispatcher._is_cpu_experiment(exp) is False

@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from openai import OpenAI
+from openai.types.responses import Response as OpenAIResponse
 
 from alpha_lab.provider import Provider, Response, StreamEvent, ToolCall
 
@@ -52,7 +53,7 @@ class OpenAIProvider:
         )
 
         full_text = ""
-        raw_response = None
+        raw_response: OpenAIResponse | None = None
 
         try:
             for event in stream:
@@ -62,10 +63,12 @@ class OpenAIProvider:
                 elif event.type == "response.completed":
                     raw_response = event.response
         finally:
+            # Best-effort cleanup — swallow any cleanup exception so it
+            # doesn't mask the actual streaming error the caller cares about.
             try:
                 stream.close()
-            except (OSError, RuntimeError):
-                pass  # Stream already closed or connection lost
+            except Exception:
+                pass
 
         if raw_response is None:
             return
@@ -77,7 +80,11 @@ class OpenAIProvider:
         raw_output_items: list[dict[str, Any]] = []
 
         for item in raw_response.output:
-            # Serialize to dict for raw_output_items
+            # Serialize to dict for raw_output_items. Best-effort: if
+            # serialization fails we omit this item from raw_output_items
+            # but still let the item.type parsing below run, so a
+            # serialization failure doesn't cost us the actual text /
+            # tool_call data the caller needs.
             try:
                 if hasattr(item, "model_dump"):
                     item_dict = item.model_dump()
@@ -86,8 +93,8 @@ class OpenAIProvider:
                 else:
                     item_dict = dict(item)
                 raw_output_items.append(item_dict)
-            except (TypeError, ValueError, AttributeError):
-                pass  # Non-serializable item, skip
+            except Exception:
+                pass
 
             if item.type == "message":
                 for content in item.content:
@@ -104,9 +111,13 @@ class OpenAIProvider:
 
         input_tokens = 0
         output_tokens = 0
-        if hasattr(raw_response, "usage") and raw_response.usage:
+        # OpenAI API doesn't surface cache write metrics
+        cache_read_input_tokens = 0
+        if raw_response.usage:
             input_tokens = raw_response.usage.input_tokens
             output_tokens = raw_response.usage.output_tokens
+            if raw_response.usage.input_tokens_details:
+                cache_read_input_tokens = raw_response.usage.input_tokens_details.cached_tokens
 
         response = Response(
             id=raw_response.id,
@@ -115,6 +126,8 @@ class OpenAIProvider:
             has_web_search=has_web_search,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cache_read_input_tokens=cache_read_input_tokens,
+            cache_write_input_tokens=0, # Not really required, but explicit for the sake of explanation
             raw_output_items=raw_output_items,
         )
 

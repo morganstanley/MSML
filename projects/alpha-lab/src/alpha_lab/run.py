@@ -8,16 +8,17 @@ The web dashboard (server.py) is an optional monitoring layer on top.
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
-from alpha_lab.agent import AgentLoop
+import click
+
+from alpha_lab.sandboxing import sandbox
 from alpha_lab.config import load_config
-from alpha_lab.context import ContextManager
 from alpha_lab.events import (
     AgentEvent,
     AgentTextEvent,
@@ -30,12 +31,15 @@ from alpha_lab.events import (
     ToolCallEvent,
     ToolResultEvent,
 )
+from alpha_lab import deps, mlflow_logger
 from alpha_lab.pipeline import Pipeline, detect_phase1_complete
+from alpha_lab.tracing import init_tracing, pipeline_span, resolve_run_id
 
 logger = logging.getLogger("alpha_lab")
 
 # Module-level JSONL event log file handle + run tag, initialized in run_main()
 _event_log_file = None
+_pipeline_log_file = None  # {workspace}/logs/pipeline.jsonl — tailed by the dashboard server
 _run_tag = ""
 
 
@@ -57,6 +61,17 @@ def _log_event(event: AgentEvent) -> None:
                 d["image_base64"] = f"[{len(d['image_base64'])} chars]"
             _event_log_file.write(json.dumps(d, default=str) + "\n")
             _event_log_file.flush()
+        except (OSError, TypeError, ValueError):
+            pass
+
+    # Pipeline-level events (PhaseEvent) are emitted directly from run.py / pipeline.py
+    # / phase0.py / supervisor.py without going through AgentLoop or Dispatcher, so they
+    # never land in {workspace}/logs/*.jsonl where the dashboard's LogTailer watches.
+    # Duplicate them into logs/pipeline.jsonl so the dashboard can surface phase state.
+    if _pipeline_log_file is not None and isinstance(event, PhaseEvent):
+        try:
+            _pipeline_log_file.write(json.dumps(event.to_dict(), default=str) + "\n")
+            _pipeline_log_file.flush()
         except (OSError, TypeError, ValueError):
             pass
 
@@ -116,33 +131,45 @@ def _log_event(event: AgentEvent) -> None:
         logger.warning(f"Agent asked a question (unanswerable in headless mode): {event.question}")
 
 
-def run_main() -> None:
+@click.command(name="alpha-lab-run", help="Run Alpha Lab analysis headlessly", context_settings={"show_default": True})
+@click.option("--config", "config_path", type=str, required=True, help="Path to task config YAML file")
+@click.option("--workspace", type=str, required=True, help="Workspace directory path")
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output (show tool outputs)")
+@click.option("--run-id", type=str, default=None, help="Explicit run ID (overrides prefix and environment variable)")
+@click.option("--run-id-prefix", type=str, default=None, help="Prefix for generated run ID (used if --run-id is not provided)")
+@click.option("--enable-intake/--no-enable-intake", default=False, help="Run or skip the intake session before phase 0")
+@click.option("--mlflow", "mlflow_flag", is_flag=True, help="Enable the MLflow integration (Run / metric / artifact logging + "
+         "MLflow native tracing). Requires MLFLOW_TRACKING_URI and "
+         "MLFLOW_EXPERIMENT_NAME (or MLFLOW_EXPERIMENT_ID)."
+)
+def run_main(
+    config_path: str,
+    workspace: str,
+    verbose: bool,
+    run_id: str | None,
+    run_id_prefix: str | None,
+    enable_intake: bool,
+    mlflow_flag: bool,
+) -> None:
     """CLI entry point for headless agent execution."""
-    parser = argparse.ArgumentParser(
-        prog="alpha-lab-run",
-        description="Run Alpha Lab analysis headlessly",
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        required=True,
-        help="Path to task config YAML file",
-    )
-    parser.add_argument(
-        "--workspace",
-        type=str,
-        required=True,
-        help="Workspace directory path",
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Verbose output (show tool outputs)",
-    )
-    args = parser.parse_args()
+    # MLflow gate: every MLflow code path short-circuits on ALPHALAB_MLFLOW.
+    # Flip it BEFORE any observability.mlflow call so is_active() returns True
+    # for the rest of this process.
+    if mlflow_flag:
+        if not os.environ.get("MLFLOW_TRACKING_URI"):
+            sys.exit("ERROR: --mlflow requires MLFLOW_TRACKING_URI to be set.")
+        if not (
+            os.environ.get("MLFLOW_EXPERIMENT_NAME")
+            or os.environ.get("MLFLOW_EXPERIMENT_ID")
+        ):
+            sys.exit(
+                "ERROR: --mlflow requires MLFLOW_EXPERIMENT_NAME "
+                "(or MLFLOW_EXPERIMENT_ID) to be set."
+            )
+        os.environ["ALPHALAB_MLFLOW"] = "1"
 
     # Logging setup
-    level = logging.DEBUG if args.verbose else logging.INFO
+    level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -150,29 +177,61 @@ def run_main() -> None:
         stream=sys.stderr,
     )
 
-    # Load config
-    config = load_config(args.config)
-    workspace = os.path.abspath(args.workspace)
+    # Load config. Normalize to an absolute path so it resolves consistently
+    # regardless of the launch directory: load_config resolves against the
+    # process CWD, but the intake agent (run_intake) consumes config_path with
+    # its tools rooted in the workspace dir. Mirror the workspace abspath below.
+    config_path = os.path.abspath(config_path)
+    config = load_config(config_path)
+    workspace = os.path.abspath(workspace)
     Path(workspace).mkdir(parents=True, exist_ok=True)
 
+    # Resolve gpu_ids "auto" onto the config now (single run entry point). Run deps
+    # (config + executors) are built and published once below, via `with RunDeps(...)`,
+    # around the dispatcher's lifecycle.
+    _p3 = config.pipeline.phase3
+    if _p3.gpu_ids == "auto":
+        from alpha_lab.utils import detect_gpu_ids
+        _p3.gpu_ids = detect_gpu_ids()
+
     # Open structured JSONL event log in workspace parent (survives workspace rm -rf)
-    global _event_log_file, _run_tag
+    global _event_log_file, _pipeline_log_file, _run_tag
     from datetime import datetime, timezone
     event_log_dir = Path(workspace).parent
     event_log_dir.mkdir(parents=True, exist_ok=True)
     _event_log_file = open(event_log_dir / "events.jsonl", "a")
+    # Pipeline-level events also go to {workspace}/logs/pipeline.jsonl so the
+    # dashboard's LogTailer (which only watches {workspace}/logs/*.jsonl) sees them.
+    pipeline_log_dir = Path(workspace) / "logs"
+    pipeline_log_dir.mkdir(parents=True, exist_ok=True)
+    _pipeline_log_file = open(pipeline_log_dir / "pipeline.jsonl", "a")
     _run_tag = Path(workspace).name
     # Write run-start marker
     _event_log_file.write(json.dumps({
         "type": "run_start",
         "run": _run_tag,
         "datetime": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-        "config": args.config,
+        "config": config_path,
         "workspace": workspace,
     }) + "\n")
     _event_log_file.flush()
 
-    config.data_path = config.resolve_data_path(Path(workspace).parent)
+    # Backend selection. Mutually exclusive: --mlflow ⇒ MLflow only (no
+    # OTel TracerProvider installed); otherwise the existing Tempo gRPC
+    # path runs if OTEL_EXPORTER_OTLP_ENDPOINT is set.
+    mlflow_active = mlflow_logger.is_active()
+    if mlflow_active:
+        mlflow_logger.configure_sdk()  # tracking URI, workspace, ADC headers, autolog
+    else:
+        init_tracing()  # No-op if OTLP is not configured
+    # run_id is the unique identifier for the pipeline execution
+    run_id = resolve_run_id(
+        run_id=run_id,
+        run_id_prefix=run_id_prefix,
+        workspace=workspace,
+    )
+
+    config.data_path = config.resolve_data_path(Path(config_path).parent)
 
     # Check for API key
     provider_name = config.provider
@@ -190,208 +249,268 @@ def run_main() -> None:
     from alpha_lab.client import get_provider
     provider = get_provider(provider_name, api_key=api_key)
 
-    # Phase 0: resolve or generate domain adapter
-    from alpha_lab.phase0 import run_phase0
-    adapter = run_phase0(provider, config, workspace, _log_event)
-    logger.info(f"Domain adapter: {adapter.domain_name} (metric: {adapter.metric.primary_metric})")
-
-    # Create supervisor
-    from alpha_lab.supervisor import Supervisor
-    supervisor = Supervisor(
-        provider=provider,
-        config=config,
-        workspace=workspace,
-        adapter=adapter,
-        event_callback=_log_event,
+    # In MLflow mode: observability.mlflow.pipeline_run manages the MLflow Run
+    # lifecycle. In Tempo (or none) mode: the existing pipeline_span opens an
+    # OTel root span. Exactly one runs per invocation.
+    pipeline_ctx = (
+        mlflow_logger.pipeline_run(run_id, workspace, config)
+        if mlflow_active
+        else pipeline_span(run_id, workspace, config, config_path)
     )
+    with pipeline_ctx:
+        # Intake: interactive user-proxy session. Runs before phase 0 so its
+        # artifacts (agenda.md, proxy_state.md) seed adapter customization.
+        # Independent of handoff — handoff has its own Bootstrapping fallback.
+        effective_config_path = Path(config_path)
+        if enable_intake:
+            from alpha_lab.cli import run_intake
+            run_intake(provider, config, config_path, workspace, _log_event)
+            # If intake produced a workspace-local config, prefer it for the rest of the pipeline.
+            workspace_config = Path(workspace) / "config.json"
+            if workspace_config.exists():
+                config = load_config(workspace_config)
+                config.data_path = config.resolve_data_path(workspace_config.parent)
+                effective_config_path = workspace_config
+                logger.info("Intake produced workspace config; reloaded from %s", workspace_config)
 
-    # Validate adapter (customization agent may have modified any file)
-    logger.info("Validating adapter")
-    supervisor.validate_adapter()
+        # Pipeline-level params + the input config as an artifact. All
+        # mlflow_logger.log_* calls are no-op in non-MLflow mode.
+        mlflow_logger.log_pipeline_params({
+            "task.description": getattr(config, "description", "") or "",
+            "task.target": getattr(config, "target", "") or "",
+            "data_path": str(getattr(config, "data_path", "")),
+            "domain": getattr(config, "domain", "") or "",
+            "provider": getattr(config, "provider", "") or "",
+            "model": getattr(config, "model", "") or "",
+            "reasoning_effort": getattr(config, "reasoning_effort", "") or "",
+            "config_path": config_path,
+            "workspace": workspace,
+        })
+        if effective_config_path.is_file():
+            mlflow_logger.log_pipeline_artifact(effective_config_path, artifact_path="config.json")
+        base_config_path = Path(workspace) / "base_config.json"
+        if base_config_path.is_file():
+            mlflow_logger.log_pipeline_artifact(base_config_path, artifact_path="base_config.json")
 
-    context = ContextManager(
-        provider=provider,
-        model=config.model,
-        workspace=workspace,
-    )
+        run_deps = deps.RunDeps(config, workspace=workspace, api_key=api_key)
+        run_deps.open()
 
-    agent = AgentLoop(
-        provider=provider,
-        model=config.model,
-        context=context,
-        event_callback=_log_event,
-        reasoning_effort=config.reasoning_effort,
-        config=config,
-        adapter=adapter,
-    )
+        # Phase 0: resolve or generate domain adapter
+        from alpha_lab.phase0 import run_phase0
+        phase0_start = time.time()
+        adapter = run_phase0(provider, config, workspace, _log_event)
+        logger.info(f"Domain adapter: {adapter.domain_name} (metric: {adapter.metric.primary_metric})")
+        adapter_dir = Path(workspace) / "adapter"
+        if adapter_dir.is_dir():
+            mlflow_logger.log_pipeline_artifacts_dir(adapter_dir, "phase0/adapter")
+        mlflow_logger.log_pipeline_params({
+            "phase0.adapter_domain": adapter.domain_name,
+            "phase0.primary_metric": adapter.metric.primary_metric,
+            "phase0.metric_direction": adapter.metric.direction,
+        })
+        mlflow_logger.log_pipeline_metrics(
+            {"phase0.duration_seconds": time.time() - phase0_start}
+        )
 
-    initial_message = (
-        f"Start. Workspace: {workspace}. "
-        f"Data path: {config.data_path}. "
-        f"Task: {config.description}"
-    )
-    if config.target:
-        initial_message += f" Target variable: {config.target}."
-    initial_message += " Go."
+        # Create supervisor
+        from alpha_lab.supervisor import Supervisor
+        supervisor = Supervisor(
+            provider=provider,
+            config=config,
+            workspace=workspace,
+            adapter=adapter,
+            event_callback=_log_event,
+        )
 
-    # Run to completion (blocks)
-    pipeline = None
-    dispatcher = None
-    executor = None
-    cpu_executor = None
-    try:
-        # Phase 1: skip if already complete
-        if "phase1" in config.pipeline.phases and detect_phase1_complete(workspace):
-            logger.info("Phase 1 already complete — skipping")
-            _log_event(PhaseEvent(
-                phase="phase1", step="exploration", status="completed",
-                detail="Phase 1 already complete — skipped",
-            ))
-        elif "phase1" in config.pipeline.phases:
-            agent.run(initial_message)
-        else:
-            logger.info("Phase 1 not in pipeline — skipping")
+        # Validate adapter (customization agent may have modified any file)
+        logger.info("Validating adapter")
+        supervisor.validate_adapter()
 
-        # Supervisor: review Phase 1
-        if "phase1" in config.pipeline.phases:
-            try:
-                supervisor.review_phase1()
-            except Exception as e:
-                logger.warning(f"Supervisor Phase 1 review failed: {e}")
+        initial_message = (
+            f"Start. Workspace: {workspace}. "
+            f"Data path: {config.data_path}. "
+            f"Task: {config.description}"
+        )
+        if config.target:
+            initial_message += f" Target variable: {config.target}."
+        initial_message += " Go."
 
-        # Phase 2: run pipeline if configured
-        if "phase2" in config.pipeline.phases:
-            phase1_skipped = "phase1" not in config.pipeline.phases
-            if phase1_skipped and not detect_phase1_complete(workspace):
-                # Phase 1 intentionally skipped (ablation) — create stub files
-                # so Phase 2 can proceed without exploration context
-                logger.info("Phase 1 skipped — creating stub learnings for Phase 2")
-                stub_learnings = Path(workspace) / "learnings.md"
-                if not stub_learnings.exists():
-                    stub_learnings.write_text(
-                        "# Learnings\n\n"
-                        "Phase 1 exploration was skipped (ablation mode). "
-                        "No prior data analysis available.\n"
-                    )
-                stub_report_dir = Path(workspace) / "data_report"
-                stub_report_dir.mkdir(parents=True, exist_ok=True)
-                stub_report = stub_report_dir / "stub.md"
-                if not stub_report.exists():
-                    stub_report.write_text(
-                        "# Data Report\n\n"
-                        "Phase 1 exploration was skipped (ablation mode).\n"
-                    )
-
-            if not detect_phase1_complete(workspace):
-                logger.error("Cannot run Phase 2: Phase 1 output not found")
-            else:
-                logger.info("Starting Phase 2 pipeline")
-                pipeline = Pipeline(
+        # Run to completion (blocks)
+        pipeline = None
+        dispatcher = None
+        try:
+            # Phase 1: skip if already complete
+            phase1_start = time.time()
+            if "phase1" in config.pipeline.phases and detect_phase1_complete(workspace):
+                logger.info("Phase 1 already complete — skipping")
+                _log_event(PhaseEvent(
+                    phase="phase1", step="exploration", status="completed",
+                    detail="Phase 1 already complete — skipped",
+                ))
+            elif "phase1" in config.pipeline.phases:
+                _log_event(PhaseEvent(
+                    phase="phase1", step="exploration", status="starting",
+                    detail="Phase 1: exploring data",
+                ))
+                sandbox.run_agent(
+                    "phase1/explorer",
+                    _log_event,
+                    initial_message=initial_message,
                     provider=provider,
-                    config=config,
-                    workspace=workspace,
-                    event_callback=_log_event,
                     adapter=adapter,
                 )
-                pipeline.run_phase2()
+                _log_event(PhaseEvent(
+                    phase="phase1", step="exploration", status="completed",
+                    detail="Phase 1 complete",
+                ))
+            else:
+                logger.info("Phase 1 not in pipeline — skipping")
 
-        # Supervisor: review Phase 2
-        if "phase2" in config.pipeline.phases:
-            try:
-                supervisor.review_phase2()
-            except Exception as e:
-                logger.warning(f"Supervisor Phase 2 review failed: {e}")
-
-        # Phase 3: experiment orchestration
-        if "phase3" in config.pipeline.phases:
-            from alpha_lab.dispatcher import Dispatcher
-            from alpha_lab.experiment_db import ExperimentDB
-
-            p3 = config.pipeline.phase3
-            db = ExperimentDB(os.path.join(workspace, "experiments.db"))
-
-            # Create GPU executor (None if no GPUs configured)
-            executor = None
-            if p3.gpu_ids:
-                if p3.executor == "local":
-                    from alpha_lab.local_gpu import LocalGPUManager
-                    executor = LocalGPUManager(
-                        gpu_ids=p3.gpu_ids,
-                        max_per_gpu=p3.max_per_gpu,
-                        time_limit_seconds=p3.time_limit_seconds,
-                        python_executable=p3.python_executable,
+            # Supervisor: review Phase 1
+            if "phase1" in config.pipeline.phases:
+                try:
+                    supervisor.review_phase1()
+                except Exception as e:
+                    logger.warning(f"Supervisor Phase 1 review failed: {e}")
+                # Phase 1 artifacts (no-op in non-MLflow mode)
+                ws_path = Path(workspace)
+                if (ws_path / "learnings.md").is_file():
+                    mlflow_logger.log_pipeline_artifact(
+                        ws_path / "learnings.md", "phase1/learnings.md",
                     )
-                else:
-                    from alpha_lab.slurm import SlurmManager
-                    executor = SlurmManager(
-                        partitions=p3.slurm_partitions,
-                        gpu_per_job=p3.gpu_per_job,
-                        max_gpus=p3.max_concurrent_gpus,
-                        time_limit=p3.slurm_time_limit,
-                        python_executable=p3.python_executable,
-                    )
-
-            # Create CPU executor (always enabled for CPU-only mode,
-            # optional alongside GPU executor for tree-based models)
-            cpu_executor = None
-            if p3.cpu_enabled or not p3.gpu_ids:
-                from alpha_lab.local_cpu import LocalCPUManager
-                cpu_executor = LocalCPUManager(
-                    max_parallel=p3.cpu_max_parallel,
-                    time_limit_seconds=p3.cpu_time_limit_seconds,
-                    python_executable=p3.python_executable,
+                for sub in ("data_report", "plots", "scripts"):
+                    if (ws_path / sub).is_dir():
+                        mlflow_logger.log_pipeline_artifacts_dir(
+                            ws_path / sub, f"phase1/{sub}",
+                        )
+                mlflow_logger.log_pipeline_metrics(
+                    {"phase1.duration_seconds": time.time() - phase1_start}
                 )
-                if not p3.gpu_ids:
-                    logger.info("CPU-only mode: no GPUs configured, all experiments run on CPU")
+
+            # Phase 2: run pipeline if configured
+            if "phase2" in config.pipeline.phases:
+                phase1_skipped = "phase1" not in config.pipeline.phases
+                if phase1_skipped and not detect_phase1_complete(workspace):
+                    # Phase 1 intentionally skipped (ablation) — create stub files
+                    # so Phase 2 can proceed without exploration context
+                    logger.info("Phase 1 skipped — creating stub learnings for Phase 2")
+                    stub_learnings = Path(workspace) / "learnings.md"
+                    if not stub_learnings.exists():
+                        stub_learnings.write_text(
+                            "# Learnings\n\n"
+                            "Phase 1 exploration was skipped (ablation mode). "
+                            "No prior data analysis available.\n"
+                        )
+                    stub_report_dir = Path(workspace) / "data_report"
+                    stub_report_dir.mkdir(parents=True, exist_ok=True)
+                    stub_report = stub_report_dir / "stub.md"
+                    if not stub_report.exists():
+                        stub_report.write_text(
+                            "# Data Report\n\n"
+                            "Phase 1 exploration was skipped (ablation mode).\n"
+                        )
+
+                if not detect_phase1_complete(workspace):
+                    logger.error("Cannot run Phase 2: Phase 1 output not found")
                 else:
-                    logger.info(
-                        f"CPU executor enabled: {p3.cpu_max_parallel} parallel slots "
-                        f"for tree-based models"
+                    logger.info("Starting Phase 2 pipeline")
+                    phase2_start = time.time()
+                    pipeline = Pipeline(
+                        provider=provider,
+                        config=config,
+                        workspace=workspace,
+                        event_callback=_log_event,
+                        adapter=adapter,
+                    )
+                    pipeline.run_phase2()
+                    mlflow_logger.log_pipeline_metrics(
+                        {"phase2.duration_seconds": time.time() - phase2_start}
                     )
 
-            dispatcher = Dispatcher(
-                provider=provider,
-                config=config,
-                workspace=workspace,
-                db=db,
-                executor=executor,
-                event_callback=_log_event,
-                worker_count=p3.worker_count,
-                cpu_executor=cpu_executor,
-                adapter=adapter,
-                supervisor=supervisor,
-            )
-            dispatcher.run()
+            # Supervisor: review Phase 2
+            if "phase2" in config.pipeline.phases:
+                try:
+                    supervisor.review_phase2()
+                except Exception as e:
+                    logger.warning(f"Supervisor Phase 2 review failed: {e}")
+                # Phase 2 artifacts
+                ws_path = Path(workspace)
+                fw_dir_name = (
+                    adapter.experiment.framework_dir
+                    if adapter is not None and getattr(adapter, "experiment", None)
+                    else "backtest"
+                )
+                fw_dir = ws_path / fw_dir_name
+                if fw_dir.is_dir():
+                    mlflow_logger.log_pipeline_artifacts_dir(
+                        fw_dir, f"phase2/{fw_dir_name}",
+                    )
+                for fname in ("framework_review.md", "framework_critique.md"):
+                    p = ws_path / fname
+                    if p.is_file():
+                        mlflow_logger.log_pipeline_artifact(p, f"phase2/{fname}")
 
-    except KeyboardInterrupt:
-        logger.info("Interrupted, stopping")
-        agent.stop()
-        if pipeline is not None:
-            pipeline.stop()
-        if dispatcher is not None:
-            dispatcher.stop()
-    finally:
-        # Clean up executors to prevent orphaned processes
-        if executor is not None:
-            try:
-                executor.cleanup_all()
-            except Exception as e:
-                logger.warning("Failed to cleanup GPU executor: %s", e)
-        if cpu_executor is not None:
-            try:
-                cpu_executor.cleanup_all()
-            except Exception as e:
-                logger.warning("Failed to cleanup CPU executor: %s", e)
-        if hasattr(provider, 'openai_client'):
-            try:
-                provider.openai_client.close()
-            except Exception as e:
-                logger.warning("Failed to close OpenAI client: %s", e)
-        if _event_log_file is not None:
-            try:
-                _event_log_file.close()
-            except OSError:
-                pass
+            # Phase 3: experiment orchestration
+            if "phase3" in config.pipeline.phases:
+                from alpha_lab.dispatcher import Dispatcher
+                from alpha_lab.experiment_db import ExperimentDB
+
+                db = ExperimentDB(os.path.join(workspace, "experiments.db"))
+
+                dispatcher = Dispatcher(
+                    provider=provider,
+                    workspace=workspace,
+                    db=db,
+                    event_callback=_log_event,
+                    adapter=adapter,
+                    supervisor=supervisor,
+                )
+                phase3_start = time.time()
+                try:
+                    dispatcher.run()
+                finally:
+                    # Stop/join the worker + strategist threads before RunDeps tears the
+                    # executors down (the outer finally's run_deps.close()), so late threads
+                    # can't hit cleared deps or a half-torn-down executor.
+                    dispatcher.stop()
+
+                # Phase 3 artifacts (no-op in non-MLflow mode)
+                ws_path = Path(workspace)
+                for fname in ("leaderboard.md", "playbook.md", "final_report.md"):
+                    p = ws_path / fname
+                    if p.is_file():
+                        mlflow_logger.log_pipeline_artifact(p, f"phase3/{fname}")
+                if (ws_path / "reports").is_dir():
+                    mlflow_logger.log_pipeline_artifacts_dir(
+                        ws_path / "reports", "phase3/reports",
+                    )
+                mlflow_logger.log_pipeline_metrics(
+                    {"phase3.duration_seconds": time.time() - phase3_start}
+                )
+
+        except KeyboardInterrupt:
+            logger.info("Interrupted, stopping")
+            if pipeline is not None:
+                pipeline.stop()
+        finally:
+            run_deps.close()
+            if hasattr(provider, 'openai_client'):
+                try:
+                    provider.openai_client.close()
+                except Exception as e:
+                    logger.warning("Failed to close OpenAI client: %s", e)
+            if _event_log_file is not None:
+                try:
+                    _event_log_file.flush()
+                    _event_log_file.close()
+                except OSError:
+                    pass
+            if _pipeline_log_file is not None:
+                try:
+                    _pipeline_log_file.flush()
+                    _pipeline_log_file.close()
+                except OSError:
+                    pass
 
 
 if __name__ == "__main__":

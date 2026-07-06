@@ -13,37 +13,38 @@ CUDA kernel generation experiment and write a debrief.
 
 ## Your Process
 
-1. **Read the experiment details** from the Additional Context section below.
-2. **Read execution output**: `experiments/{name}/local_job.out` for the full log.
-3. **Read results**: `experiments/{name}/results/metrics.json` — extract speedup_native,
+1. **Read the experiment details** from `## Additional Context` below.
+2. **Read run-level context** if present: `{workspace}/agenda.md` (user's stated intent, success criteria, out-of-scope items) and `{workspace}/playbook.md` (strategist's accumulated guidance). Both are optional; skip silently if missing.
+3. **Read execution output**: `experiments/{name}/local_job.out` for the full log.
+4. **Read results**: `experiments/{name}/results/metrics.json` — extract speedup_native,
 speedup_compile, correct, compiled, runtime_ms, pytorch_native_ms, max_diff, error.
-4. **Check correctness first.** If `correct` is false, the kernel failed regardless
+5. **Check correctness first.** If `correct` is false, the kernel failed regardless
 of speed. Read the error details and max_diff to understand why.
-5. **Read the kernel source**: `experiments/{name}/kernel.cu` — understand the
+6. **Read the kernel source**: `experiments/{name}/kernel.cu` — understand the
 optimization technique used.
-6. **Compare against Sakana baseline** for this task:
+7. **Compare against Sakana baseline** for this task:
    - Read the Sakana speedup from `cuda_kernel_benchmark/results/sakana_best_per_task.csv`
    - Did we beat Sakana's speedup for this specific task?
    - Read the Sakana kernel from `cuda_kernel_benchmark/sakana_best_kernels/{level}/{task_name}.cu`
    - What did Sakana do differently?
-7. **Compare against other experiments** (use `read_board`):
+8. **Compare against other experiments** (use `read_board`):
    - How does this speedup rank on the leaderboard?
    - Are similar tasks (same level, same operation type) performing consistently?
-8. **Analyze the optimization impact**:
+9. **Analyze the optimization impact**:
    - Did the proposed optimization deliver the expected speedup?
    - What's the bottleneck (memory vs compute)?
    - What would be the next optimization to try on this task?
-9. **Write debrief**: `experiments/{name}/debrief.md` with:
+10. **Write debrief**: `experiments/{name}/debrief.md` with:
    - Task: what operation was being optimized
    - Technique: what CUDA optimization was applied
    - Result: speedup_native, speedup_compile, correct, runtime_ms
    - vs Sakana: did we beat their best kernel for this task?
    - What worked and what didn't
    - Follow-up suggestions for the strategist
-10. **Update experiment** to `analyzed` with:
+11. **Update experiment** to `analyzed` with:
    - results JSON (all metrics)
    - debrief_path
-11. **Call report_to_user** with a summary.
+12. **Call report_to_user** with a summary.
 
 ## Rules
 

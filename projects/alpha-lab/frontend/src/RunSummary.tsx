@@ -95,15 +95,21 @@ export default function RunSummary({ events }: RunSummaryProps) {
   // Token usage
   let inputTokens = 0;
   let outputTokens = 0;
+  let cacheReadInputTokens = 0;
   for (const e of events) {
     if (e.type === "api_response") {
       const usage = e.usage as Record<string, number> | undefined;
       if (usage) {
         inputTokens += usage.input_tokens || 0;
         outputTokens += usage.output_tokens || 0;
+        cacheReadInputTokens += usage.cache_read_input_tokens || 0;
       }
     }
   }
+  const cachedPercent =
+    inputTokens > 0 && cacheReadInputTokens > 0
+      ? Math.round((100 * cacheReadInputTokens) / inputTokens)
+      : null;
 
   // Determine which phase completed
   const hasPhase2 = events.some(
@@ -158,7 +164,10 @@ export default function RunSummary({ events }: RunSummaryProps) {
           <div className="summary-section-title">Token Usage</div>
           <div className="token-row">
             <span className="token-label">Input</span>
-            <span className="token-value">{formatTokens(inputTokens)}</span>
+            <span className="token-value">
+              {formatTokens(inputTokens)}
+              {cachedPercent !== null ? ` (${cachedPercent}% cached)` : ""}
+            </span>
           </div>
           <div className="token-row">
             <span className="token-label">Output</span>

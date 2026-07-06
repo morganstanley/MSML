@@ -4,66 +4,7 @@
 
 **Autonomous research agent.** Give it a dataset and a task, and it will explore the data end-to-end, build an evaluation framework, then run dozens of experiments on GPUs — all without human intervention.
 
-[DETAILS.md](DETAILS.md)
-
-*Released by the Morgan Stanley Machine Learning Research Team*
-
 </div>
-
----
-
-## What is AlphaLab?
-
-AlphaLab automates quantitative, verifiable research end-to-end. You give it a dataset and a natural-language objective — "optimize these CUDA kernels", "forecast this time series", "train the best small language model you can in 20 minutes" — and it goes off for hours or days, autonomously exploring the data, building its own evaluation framework, running dozens of GPU experiments, and evolving its own methodology as it learns what works. No human in the loop.
-
-The system is **domain-agnostic**: the same pipeline handles CUDA kernel optimization, LLM pretraining, time series forecasting, and any other domain with objective, easy-to-evaluate metrics. All domain-specific behavior lives in *adapters* that the model generates itself from the data — AlphaLab writes its own prompts, defines its own metrics, and builds its own evaluation harness. It is **self-evolving**: a persistent *playbook* accumulates knowledge experiment-by-experiment, functioning as online prompt optimization — by the end of a campaign, the system has discovered and encoded domain methodology that didn't exist anywhere in its code or prompts at launch. And it is **recursively LLM-powered**: agents can spawn sub-agents as needed, delegating subtasks without polluting the parent's context.
-
-This repository accompanies the paper *AlphaLab: Autonomous Multi-Agent Research Across Optimization Domains with Frontier LLMs*. See the paper for full experimental details, ablations, and analysis.
-
-<div align="center">
-<img src="docs/pipeline_overview.png" alt="AlphaLab Pipeline" width="800">
-</div>
-
-### The Pipeline
-
-AlphaLab is a *harness*: a combination of tools and a structured environment that converts a frontier LLM into an autonomous research agent. The system is LLM-agnostic — any model that supports tool use and multi-modal input can be dropped in with no changes to the infrastructure. We evaluate with GPT-5.2 and Claude Opus 4.6 in the paper; all differences in outcomes are attributable to the model, not the harness.
-
-The pipeline runs in four phases:
-
-- **Phase 0 — Adapter Resolution.** All domain-specific behavior is parameterized by a *domain adapter*: 11 files comprising prompt templates (one per agent role), metric definitions, experiment structure, and a `domain_knowledge.md` document that is injected into every agent's context for the entire campaign. Phase 0 generates or customizes this adapter by examining the actual data and searching the web for prior work. The key idea is that *prompt engineering is performed by the model*, grounded in the data.
-
-- **Phase 1 — Data Exploration.** A single Explorer agent operates autonomously for 1-2 hours: it generates a plan, then works through it — writing and running Python scripts, generating plots, searching the web for relevant papers, and updating its notes after each finding. It produces a human-readable research report and a machine-readable `learnings.md` consumed by later phases.
-
-- **Phase 2 — Adversarial Evaluation Construction.** Evaluation correctness is critical — if the metric is wrong, every experiment optimizes the wrong objective. Phase 2 addresses this through a multi-agent adversarial loop: a **Builder** writes the evaluation framework, a **Critic** (a fresh agent with no shared context) audits for data leakage, lookahead bias, and metric errors, and a **Tester** writes and runs an automated test suite. The loop repeats until all tests pass.
-
-- **Phase 3 — GPU-Scale Experimentation.** The core of the system: a sustained experimental campaign where a **Strategist** proposes experiments, **Workers** implement and analyze them, and a **Dispatcher** (pure Python, no LLM) orchestrates GPU resources. A persistent **Playbook** accumulates domain knowledge across experiments, creating a feedback loop that functions as online prompt optimization — the system literally gets better at its task as the campaign progresses. The campaign runs until convergence (no improvement for 20 consecutive experiments) or budget exhaustion.
-
-A **Supervisor** meta-agent monitors health across the pipeline, intervening when error rates spike — it can diagnose systemic issues and patch the adapter's domain knowledge on the fly.
-
-### Tools
-
-Every agent has access to the same core tool set:
-
-| Tool | Description | Usage |
-|------|-------------|-------|
-| `shell_exec` | Full Unix shell access — write code, install packages, run training, manage jobs | ~50% of all tool calls |
-| `web_search` | Search the web for papers, documentation, and prior work | Heavy in early phases |
-| `spawn_agent` | Launch a sub-agent with its own context window and full tool access — enables recursive delegation | Used for complex subtasks |
-| `view_image` | Read plots and visualizations the agent generates | Used to inspect results |
-
-Additional tools include `read_file`, `grep_file`, `propose_experiment`, `report_to_user`, and adapter-specific tools for reading/patching domain configuration. The full tool set is defined in [`src/alpha_lab/tools.py`](src/alpha_lab/tools.py).
-
-### Key Results (from the paper)
-
-| Domain | Task | Best Result | vs. Baseline |
-|--------|------|-------------|-------------|
-| **CUDA Kernels** | Write optimized GPU kernels vs. `torch.compile` | **4.4x** mean speedup (up to **91x**) | Outperforms compiled PyTorch on 83% of tasks |
-| **LLM Pretraining** | Minimize val BPB under 20-min budget, <100M params | **0.7578** BPB (Opus) | 22% lower loss than single-shot baseline |
-| **Traffic Forecasting** | 24h ahead road occupancy (862 sensors) | **0.0214** RMSE (Opus) | 25% better than seasonal baseline |
-
-Each campaign costs $150-200 in LLM API calls and completes in 12-48 hours on 4x H100 hardware. The two models (GPT-5.2 and Claude Opus 4.6) discover qualitatively different solutions in every domain — neither dominates uniformly — suggesting that multi-model campaigns provide complementary search coverage.
-
-For detailed architecture documentation, see [DETAILS.md](DETAILS.md).
 
 ---
 
@@ -71,7 +12,7 @@ For detailed architecture documentation, see [DETAILS.md](DETAILS.md).
 
 > **⚠️ READ THIS BEFORE RUNNING ⚠️**
 >
-> AlphaLab runs an LLM **in a loop** as **you** on your machine.
+> AlphaLab runs an LLM **in a loop** as **you** on your Unix machine.
 >
 > Anything you can do from your shell, AlphaLab can do:
 > - **Delete files and directories** — anything you have permission to `rm`, it can `rm`
@@ -90,133 +31,78 @@ For detailed architecture documentation, see [DETAILS.md](DETAILS.md).
 
 ## Quick Start
 
-### 1. Clone and install
+### 1. Clone
 
 ```bash
-git clone https://github.com/morganstanley/MSML.git
-cd MSML/projects/alpha-lab
-
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# Install PyTorch for your hardware (see https://pytorch.org/get-started/locally/)
-pip install torch  # CPU only
-# pip install torch --index-url https://download.pytorch.org/whl/cu126  # CUDA 12.6
+git clone <your-fork-url> alpha-lab
+cd alpha-lab
 ```
 
-### 2. Configure API keys
+### 2. Setup a virtual environment
 
 ```bash
-cp .env.example .env
-# Edit .env — add your API key:
-#   OPENAI_API_KEY=sk-...        (for OpenAI)
-#   or ANTHROPIC_API_KEY       (for Claude)
-source .env
+# create a venv
+source scripts/setup-venv
+# pass in any existing venv (source scripts/setup-venv --help)
+source scripts/setup-venv --venv-path <venv-path>
 ```
 
-### 3. Run the demo
+> The `ALPHALAB_PYTHON` variable tells AlphaLab which Python to use for running GPU experiments (Phase 3). This should point to a Python environment that has PyTorch, NumPy, Pandas, and other ML dependencies installed. All shell scripts and configs read from this variable automatically.
 
-A working demo is included using synthetic exchange rate data. Pick the config that matches your hardware:
+### 3. Run tests
 
-**CPU only** (no GPU needed — runs tree-based models like XGBoost, LightGBM, Random Forest):
 ```bash
-python data/generate_synthetic.py
-python run.py --config data/demo_exchange_cpu_only.json --workspace ./workspace_demo
+python -m pytest tests
 ```
 
-**Single GPU** (one GPU, experiments run sequentially):
+### 4. Set your API key
+
+AlphaLab uses the standard OpenAI API:
+
 ```bash
-python data/generate_synthetic.py
-python run.py --config data/demo_exchange_single_gpu.json --workspace ./workspace_demo
+export OPENAI_API_KEY=your-key-here
+# Optional: point at an OpenAI-compatible endpoint
+# export OPENAI_BASE_URL=https://your-endpoint/v1
 ```
 
-**Multi-GPU** (4x GPUs in parallel — the full experience):
+### 5. Run the demo
+
+A working demo is included out of the box using synthetic exchange rate data:
+
 ```bash
-python data/generate_synthetic.py
-python run.py --config data/demo_exchange_config.json --workspace ./workspace_demo
+# 1. Generate the synthetic dataset and config (no internet needed).
+#    Writes exchange_rates.csv + config.json into the given directory.
+./scripts/generate-exchange-test-data --output-dir /var/tmp/${USER}/alpha-lab/workspace
+
+# 2. Run the full pipeline using the generated config.
+python run.py --config /var/tmp/${USER}/alpha-lab/workspace/config.json --workspace /var/tmp/${USER}/alpha-lab/workspace
 ```
 
-All three run the full pipeline autonomously:
-- **Phase 0**: Customize the domain adapter for your data (~5 min)
+This will run all four phases autonomously:
+- **Phase 0**: Customize the domain adapter for your data
 - **Phase 1**: Explore the dataset, write scripts, generate plots, build a report (~30-90 min)
 - **Phase 2**: Build an evaluation framework with tests (~20-60 min)
-- **Phase 3**: Run experiments with different ML models (~1-3 hours depending on hardware)
+- **Phase 3**: Run 10 GPU experiments with different ML models (~1-3 hours)
 
-### 4. Watch it work — Web Dashboard
+### 6. Watch it work — Web Dashboard
 
-**In a separate terminal:**
+The dashboard lets you watch the pipeline in real-time. **In a separate terminal:**
 
 ```bash
-# First time only — build the frontend
+# First time only — build the frontend (requires Node.js)
 cd frontend && npm install && npm run build && cd ..
 
-# Start the dashboard
+# Start the dashboard (point at the same workspace)
 python serve.py --workspace ./workspace_demo --port 8000
 # Open http://localhost:8000
 ```
 
-The dashboard is a passive viewer — it streams live events from the running pipeline. You can start it before, during, or after a run.
-
----
-
-## Reproducing Paper Results
-
-The paper evaluates AlphaLab on four datasets. Each has a config and download instructions.
-
-### Download datasets
-
-```bash
-pip install huggingface_hub  # needed for Traffic and LLM Speedrun
-
-# Download all datasets
-python data/download_datasets.py
-
-# Or download individually
-python data/download_datasets.py --dataset traffic
-python data/download_datasets.py --dataset llm_speedrun
-python data/download_datasets.py --dataset kernelbench
-python data/download_datasets.py --dataset exchange  # already included
-```
-
-### Run experiments
-
-Each dataset has a pre-configured JSON. Adjust `gpu_ids` and `worker_count` for your hardware.
-
-| Dataset | Config | Domain | Metric | GPUs |
-|---------|--------|--------|--------|------|
-| Exchange Rates | `data/demo_exchange_config.json` | time_series | Sharpe ratio (maximize) | 4x |
-| Traffic | `data/paper_traffic_gpt.json` | time_series | RMSE (minimize) | 4x |
-| LLM Speedrun | `data/paper_llm_speedrun_gpt.json` | llm_speedrun | val BPB (minimize) | 4x |
-| CUDA KernelBench | `data/paper_cuda_kernelbench_gpt.json` | cuda_kernel | GFLOPS (maximize) | 4x |
-
-```bash
-# Exchange rates (synthetic, included)
-python run.py --config data/demo_exchange_config.json --workspace ./results/exchange
-
-# Traffic forecasting
-python run.py --config data/paper_traffic_gpt.json --workspace ./results/traffic
-
-# LLM pretraining speedrun
-python run.py --config data/paper_llm_speedrun_gpt.json --workspace ./results/llm_speedrun
-
-# CUDA kernel optimization
-python run.py --config data/paper_cuda_kernelbench_gpt.json --workspace ./results/cuda
-```
-
-### Using Claude instead of GPT
-
-Change `provider` and `model` in any config:
-
-```json
-{
-  "provider": "anthropic",
-  "model": "us.anthropic.claude-sonnet-4-20250514",
-  "reasoning_effort": "medium"
-}
-```
-
-Requires ANTHROPIC_API_KEY in your `.env`.
+The dashboard is a passive viewer — it doesn't control the pipeline. You can start it before, during, or after a run. It will:
+- **Stream live events** — see the LLM thinking, writing code, running experiments
+- **Browse workspace files** — scripts, plots, reports, experiment code
+- **Show the kanban board** — experiment lifecycle from proposed → running → done
+- **Display the leaderboard** — experiments ranked by metric
+- **Chat** — ask questions about system state ("What's the best model?", "Any errors?")
 
 ---
 
@@ -224,12 +110,13 @@ Requires ANTHROPIC_API_KEY in your `.env`.
 
 ### Use an agent to set up your config
 
-This codebase was largely built with AI coding agents, and while it aims to be plug-and-play, it may need some tweaking for your setup. We recommend using an AI coding agent:
+This codebase was largely built by Claude Code, and while it aims to be plug-and-play, it may need some tweaking for your setup. We recommend using an AI coding agent:
 
 1. Open [Claude Code](https://claude.ai/code) (or your preferred agent) in this repo
 2. Prompt it to **explore the repository and become an expert in it**
-3. Tell it: **where your data is**, **what you want to do**, **which model**, **what GPUs you have**
+3. Tell it: **where your data is**, **what you want to do**, **which model** (e.g. gpt-5.2), **what GPUs you have**
 4. Ask it to **write a config and run script** for you
+5. If there are errors, paste them back and let it fix things
 
 ### Config format
 
@@ -240,56 +127,139 @@ This codebase was largely built with AI coding agents, and while it aims to be p
   "target": "What to predict/optimize...",
   "provider": "openai",
   "model": "gpt-5.2",
+  "reasoning_effort": "low",
   "domain": "",
   "pipeline": {
     "phases": ["phase1", "phase2", "phase3"],
     "phase3": {
       "executor": "local",
       "max_experiments": 50,
-      "gpu_ids": [0, 1, 2, 3],
       "max_per_gpu": 1,
-      "worker_count": 4,
       "time_limit_seconds": 21600,
-      "python_executable": ""
+      "python_executable": "/path/to/your/python"
     }
   }
 }
 ```
 
-### Hardware configuration
+**`python_executable`:** If left empty (recommended), this reads from the `ALPHALAB_PYTHON` env var you set in `.env`. You can also hardcode a path here per-config.
 
-The key settings to adjust for your hardware:
+**Domain options:** Leave `""` for time series (default), or set to `"cuda_kernel"`, `"nanogpt"`, `"llm_speedrun"`, or any free-text description to generate a custom adapter from scratch.
 
-| Setting | What it does | Examples |
-|---------|-------------|---------|
-| `gpu_ids` | Which GPUs to use. Set `[]` for CPU-only mode | `[0]` (one GPU), `[0,1,2,3]` (four), `[]` (CPU only) |
-| `max_per_gpu` | Experiments per GPU (1 = exclusive, 2+ = packing) | `1` for large models, `2` if models fit |
-| `worker_count` | Number of LLM worker agents running in parallel | Usually matches number of GPUs |
-| `max_experiments` | Total experiments before stopping | `10` for quick test, `50` for full run |
-| `time_limit_seconds` | Kill experiments exceeding this | `3600` (1h), `21600` (6h) |
-| `cpu_enabled` | Run tree-based models on CPU in parallel with GPU | `true` (default) |
-| `cpu_max_parallel` | Max concurrent CPU experiments | `4` |
-| `python_executable` | Python binary for experiment subprocesses | Empty = uses `ALPHALAB_PYTHON` env var or `sys.executable` |
+**Provider options:** `"openai"` (default, gpt-5.2).
 
-**Domain options:** `""` for time series (default), `"cuda_kernel"`, `"nanogpt"`, `"llm_speedrun"`, or any free-text description to generate a custom adapter from scratch.
+### Run identification & tracing
 
-**Provider options:** `"openai"` (GPT-5.2) or `"anthropic"` (Claude). Set the corresponding API key in `.env`.
+Two tracing backends are supported, mutually exclusive at runtime:
+
+- **OpenTelemetry / Tempo**  — enabled by setting `OTEL_EXPORTER_OTLP_ENDPOINT`
+  (e.g., to a Grafana Tempo or Jaeger instance). When configured, spans are
+  emitted for each pipeline phase, LLM call, and tool execution. When no
+  exporter is configured, tracing is a no-op with zero overhead.
+
+  ```bash
+  export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317  # your Tempo/Jaeger collector
+  python run.py --config data/my_config.json --workspace ./workspace --run-id my-experiment-v2
+  python run.py --config data/my_config.json --workspace ./workspace --run-id-prefix forex
+  ```
+
+- **MLflow** *(opt-in via `--mlflow`)* — Run / metric / artifact logging on a
+   MLflow tracking server, plus native MLflow tracing (with
+  auto-instrumentation of OpenAI provider calls). Requires
+  `MLFLOW_TRACKING_URI` and `MLFLOW_EXPERIMENT_NAME`. 
+
+  ```bash
+  export MLFLOW_TRACKING_URI="http://localhost:8081"
+  export MLFLOW_EXPERIMENT_NAME="alpha-lab-demo"
+  python run.py --config data/my_config.json --workspace ./workspace --mlflow
+  ```
+
+
+### Included examples
+
+| Config | What it does |
+|--------|-------------|
+| `data/demo_exchange_config.json` | Synthetic FX rates, 10 experiments — quick demo |
+| `data/llm_speedrun_config.json` | LLM pretraining speed/quality optimization |
+| `data/paper_llm_speedrun_gpt.json` | Paper reproduction — LLM speedrun with GPT-5.2 |
+| `data/paper_traffic_gpt.json` | Paper reproduction — traffic forecasting with GPT-5.2 |
 
 ---
 
-## Citation
+## Evaluations
 
-If you use AlphaLab in your research, please cite:
+`alpha-lab-evaluate` allows for mechanical and model-as-a-judge evaluation of adapter customization results.  Evaluations are configured via YAML with examples present in
+`tests/fixtures/evaluations/`.
 
-```bibtex
-@article{alphalab2026,
-  title={AlphaLab: Autonomous Research Agent for End-to-End Machine Learning Experimentation},
-  author={Morgan Stanley Machine Learning Research},
-  year={2026},
-  note={Technical Report}
-}
+To execute an evaluation, the minimum requirements are a workspace with customized adapter content and logs and a named set of evaluation criteria from the YAML file.
+
+```bash
+# Uses default tests/fixtures/evaluations/adapter_evaluation.yaml
+alpha-lab-evaluate --workspace workspace_llm_speedrun_phase0 --eval-name llm_speedrun_pleias
 ```
 
-## License
+Output includes detailed pass/fail explanations for each criterion in the evaluation.  The table output can be disabled which will limit output to numeric metrics.
+```bash
+alpha-lab-evaluate --workspace workspace_llm_speedrun_phase0 --eval-name llm_speedrun_pleias --no-show-table
+```
+Output of the above:
+```
+Mechanical metrics (penalty=0.25):
+  input_tokens: 387524.0  [floor=500.0, ceiling=20000.0]  (above_ceiling)
+  output_tokens: 11901.0  [floor=200.0, ceiling=15000.0]  (ok)
+  tool_calls: 31.0  [floor=3.0, ceiling=25.0]  (above_ceiling)
+  duration_seconds: 313.7  [floor=30.0, ceiling=300.0]  (above_ceiling)
+Evaluating passthrough ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
+  domain_knowledge composite: 0.6743
+  phase1 composite: 0.2000
+  phase2_builder composite: 0.8000
+  phase2_critic composite: 0.2000
+  phase2_tester composite: 0.2000
+  phase3_fixer composite: 1.0000
+  phase3_reporter composite: 1.0000
+  phase3_strategist composite: 0.2000
+  phase3_worker_analyze composite: 0.2000
+  phase3_worker_implement composite: 0.2000
 
-Apache License 2.0. See [LICENSE](LICENSE) for details.
+Section composite: 0.4239
+```
+
+---
+
+## How It Works
+
+### Orchestration
+
+AlphaLab runs in four phases (0 → 1 → 2 → 3), each building on the last. A supervisory agent reviews output between phases and monitors health during Phase 3.
+
+| Phase | What happens | Duration |
+|-------|-------------|----------|
+| **Phase 0** | Resolve and customize the domain adapter for your data | ~5 min |
+| **Phase 1** | Explore dataset, write analysis scripts, generate plots, build research report | 30-90 min |
+| **Phase 2** | Multi-agent pipeline (Builder/Critic/Tester) creates evaluation framework with tests | 20-60 min |
+| **Phase 3** | Strategist + Workers run dozens of GPU experiments, tracked on a kanban board | Hours |
+
+### Agents
+
+Every LLM-driven step in the pipeline is performed by one of the agents below. Each has a focused responsibility: exploring data, building or critiquing code, proposing or running experiments, or supervising the work between phases.
+
+| Agent | Phase | Role |
+|-------|-------|------|
+| Customization | 0 | Patches a built-in adapter template to fit the actual dataset or benchmark |
+| Generation | 0 | Builds a full domain adapter from scratch from a free-text domain description |
+| Adapter validator | 0 (supervisor) | Reviews the resolved adapter for completeness, manifest validity, and prompt quality |
+| Explorer | 1 | Autonomously profiles the dataset; produces scripts, plots, `learnings.md`, and `data_report/` |
+| Phase 1 reviewer | 1 (supervisor) | Audits exploration artifacts and patches the adapter when prompts look misaligned with the data |
+| Builder | 2 | Constructs the domain-specific evaluation framework (e.g. backtesting code) |
+| Critic | 2 | Reviews the framework for lookahead bias, data leakage, and other pitfalls; writes a verdict |
+| Tester | 2 | Writes pytest tests for the framework and fixes failures until they pass |
+| Phase 2 reviewer | 2 (supervisor) | Validates the framework, tests, and verdict; patches adapter framework config if wrong |
+| Strategist | 3 | Periodic meta-agent: reviews the board, prunes the queue, proposes experiments, maintains the playbook |
+| Worker (implement) | 3 | Writes a proposed experiment's strategy/config/run files, smoke-tests, advances to `checked` |
+| Worker (analyze) | 3 | Analyzes a completed experiment against baselines and writes a debrief |
+| Worker (fixer) | 3 | Diagnoses and fixes a failed experiment so it can be resubmitted |
+| Reporter | 3 | Generates milestone reports with leaderboards and publication-quality comparison plots |
+| Phase 3 health check | 3 (supervisor) | Diagnoses systemic failures (triggered when error rate > 40%) and patches the adapter |
+| Interactive | CLI (out-of-pipeline) | REPL agent driven by `alpha-lab`; shares the Explorer's tool surface with `ask_user` enabled |
+
+For detailed architecture docs, see [DETAILS.md](DETAILS.md).

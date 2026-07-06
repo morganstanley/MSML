@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from alpha_lab.config import TaskConfig
+from alpha_lab.knowledge import TopicKnowledgeStore
+from alpha_lab.memory import MemoryStore
 from alpha_lab.prompts import (
     PROMPT_REGISTRY,
     build_step_prompt,
@@ -36,6 +40,11 @@ class TestBuildSystemPrompt:
         assert "prices.csv" in prompt
         assert "Analyze crypto prices" in prompt
         assert "close" in prompt
+
+    def test_memory_guidance_requires_consent_for_user_provided_reference_notes(self) -> None:
+        prompt = build_system_prompt(workspace="/ws", learnings=None)
+        assert "ask for consent before storing it as `reference`" in prompt
+        assert "never store secrets or credentials" in prompt
 
     def test_no_workspace(self) -> None:
         prompt = build_system_prompt(workspace=None, learnings=None)
@@ -78,6 +87,64 @@ class TestBuildStepPrompt:
         prompt = build_step_prompt("phase3_worker_implement", "/ws", None, config=config)
         assert "test.csv" in prompt
         assert "Test task" in prompt
+
+    def test_includes_relevant_prior_memories(self, tmp_path: Path) -> None:
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        store = MemoryStore(str(ws))
+        store.store(
+            content="Fold construction leaked future information into validation.",
+            tags=["phase3", "validation"],
+            summary="Validation leakage",
+            kind="failure",
+            phase="phase3",
+            agent="worker",
+        )
+        store.store(
+            content="Unrelated CPU note.",
+            tags=["infra"],
+            summary="Infra note",
+            kind="decision",
+            phase="phase2",
+        )
+
+        config = TaskConfig(
+            data_path="/data/test.csv",
+            description="Investigate validation leakage in experiments",
+            target="returns",
+        )
+        prompt = build_step_prompt("phase3_strategist", str(ws), None, config=config)
+        assert "Relevant Prior Memories" in prompt
+        assert "Validation leakage" in prompt
+        assert "failure/phase3/worker" in prompt
+
+    def test_prior_memory_recall_prioritizes_reference_topics(self, tmp_path: Path) -> None:
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        TopicKnowledgeStore(str(ws)).save_topic(
+            "data_access.exchange_rates",
+            "Use the managed exchange rate export and request the FX entitlement first.",
+            title="Exchange rate data access",
+            tags=["data_access"],
+        )
+        MemoryStore(str(ws)).store(
+            content="Exchange rate validation should use walk-forward splits.",
+            tags=["phase3"],
+            summary="Exchange validation split",
+            kind="failure",
+            phase="phase3",
+        )
+
+        config = TaskConfig(
+            data_path="/data/exchange_rates.csv",
+            description="Analyze exchange rate data access and prediction quality",
+            target="returns",
+        )
+        prompt = build_step_prompt("phase3_strategist", str(ws), None, config=config)
+
+        assert "Relevant Prior Memories" in prompt
+        assert "Exchange rate data access" in prompt
+        assert "reference/topic_knowledge" in prompt
 
 
 class TestPromptRegistry:

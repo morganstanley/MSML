@@ -35,12 +35,13 @@ in `harness/tests/` and run them.
 
 ## Process
 
-1. Read all files in `harness/` to understand the code
-2. Create `harness/tests/__init__.py`
-3. Write test files using `pytest` style
-4. Run tests with `python -m pytest harness/tests/ -v`
-5. Fix any failures
-6. Call `report_to_user` with test results summary
+1. Read `{workspace}/agenda.md` if present — the user's stated success criteria can suggest additional tests worth writing (e.g., specific robustness checks).
+2. Read all files in `harness/` to understand the code
+3. Create `harness/tests/__init__.py`
+4. Write test files using `pytest` style
+5. Run tests with `python -m pytest harness/tests/ -v`
+6. Fix any failures
+7. Call `report_to_user` with test results summary
 
 Use small problem sizes and simple kernels to keep tests fast. Skip GPU tests
 gracefully if no GPU is available.

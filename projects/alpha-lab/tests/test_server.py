@@ -26,8 +26,9 @@ def setup_server(tmp_workspace: str) -> None:
     srv._workspace = tmp_workspace
     srv._config_path = None
     srv.event_history.clear()
-    srv.manager = srv.AgentManager()
+    srv.manager = srv.DashboardState()
     srv.manager.db = None
+    srv._adapter_cache.clear()
 
 
 def get_client():
@@ -44,22 +45,8 @@ class TestStatusEndpoint:
         resp = client.get("/api/status")
         assert resp.status_code == 200
         data = resp.json()
-        assert "running" in data
-        assert data["running"] is False
-        assert data["has_config"] is False
-
-
-class TestStartStopEndpoints:
-    def test_start_without_config(self, tmp_workspace: str) -> None:
-        client = get_client()
-        resp = client.post("/api/start")
-        assert resp.status_code == 400
-        assert "view-only" in resp.json()["error"].lower()
-
-    def test_stop(self, tmp_workspace: str) -> None:
-        client = get_client()
-        resp = client.post("/api/stop")
-        assert resp.status_code == 200
+        assert "workspace" in data
+        assert data["workspace"] == tmp_workspace
 
 
 class TestFilesEndpoint:
@@ -143,8 +130,6 @@ class TestHealthEndpoint:
         assert data["status"] == "ok"
         assert "uptime_seconds" in data
         assert "components" in data
-        assert "dispatcher" in data["components"]
-        assert "strategist" in data["components"]
         assert "database" in data["components"]
         assert "metrics" in data["components"]
 
@@ -228,14 +213,33 @@ class TestExperimentEndpoints:
         assert resp.status_code == 200
         assert resp.json()["leaderboard"] == []
 
-    def test_leaderboard_with_results(self, tmp_workspace: str) -> None:
+    def test_leaderboard_no_adapter(self, tmp_workspace: str) -> None:
         from alpha_lab.experiment_db import ExperimentDB
         import alpha_lab.server as srv
 
-        db = ExperimentDB(str(Path(tmp_workspace) / "test.db"))
+        srv.manager.db = ExperimentDB(str(Path(tmp_workspace) / "test.db"))
+
+        client = get_client()
+        resp = client.get("/api/leaderboard")
+        assert resp.status_code == 503
+        assert "adapter not loaded" in resp.json()["error"]
+
+    def test_leaderboard_with_results(self, tmp_workspace: str, adapter) -> None:
+        from alpha_lab.experiment_db import (
+            CANONICAL_RUN_COMPLETE_SENTINEL,
+            ExperimentDB,
+        )
+        import alpha_lab.server as srv
+
+        db = ExperimentDB(str(Path(tmp_workspace) / "experiments.db"))
         eid = db.create("leader_exp", "D", "H", "{}")
         db.set_results(eid, '{"sharpe": 2.0, "max_drawdown": -0.1}')
+        # Leaderboard query requires the canonical-run sentinel.
+        results = Path(tmp_workspace) / "experiments" / "leader_exp" / "results"
+        results.mkdir(parents=True, exist_ok=True)
+        (results / CANONICAL_RUN_COMPLETE_SENTINEL).touch()
         srv.manager.db = db
+        srv._adapter_cache["adapter"] = adapter
 
         client = get_client()
         resp = client.get("/api/leaderboard")

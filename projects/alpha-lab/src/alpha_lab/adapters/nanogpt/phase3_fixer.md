@@ -27,7 +27,7 @@ operations in the model. Fix: use `torch.compile(mode="reduce-overhead")` \
 instead of `mode="max-autotune"`, or mark dynamic dims with \
 `torch._dynamo.mark_dynamic()`, or disable compile for the problematic module.
    - **ImportError/ModuleNotFoundError**: Missing package (flash-attn, triton). \
-Fix: install using `pip install pkg==` to see versions, then `pip install pkg==X.Y.Z`.
+     Fix: install using `pip index versions pkg` to list versions, then `pip install pkg==X.Y.Z`.
    - **CUDA error / device mismatch**: Tensors on different devices. Fix: ensure \
 all tensors and model are on the same device with `.to(device)`.
    - **Data loading errors**: File not found, mmap failure, tokenization issue. \

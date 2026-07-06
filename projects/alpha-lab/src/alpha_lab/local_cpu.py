@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -17,13 +16,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from alpha_lab.experiment_db import Experiment
+from alpha_lab.experiment_db import (
+    CANONICAL_RUN_COMPLETE_SENTINEL,
+    Experiment,
+)
+from alpha_lab.process_control import escalate_termination
 
 logger = logging.getLogger("alpha_lab.local_cpu")
 
 RUN_SCRIPT = """\
 #!/bin/bash
 cd {exp_dir}
+# Clear stale metrics.json with the sentinel: a leftover metrics.json
+# from a prior run could let an exit-0 rerun trigger a false sentinel.
+rm -f results/{sentinel} results/metrics.json
 export PYTHONPATH={workspace}:$PYTHONPATH
 export CUDA_VISIBLE_DEVICES=""  # Disable GPU
 {python_exe} -c "
@@ -31,6 +37,11 @@ import runpy, sys
 sys.argv = ['run_experiment.py']
 runpy.run_path('run_experiment.py', run_name='__main__')
 "
+EXIT_CODE=$?
+if [ $EXIT_CODE -eq 0 ] && [ -f results/metrics.json ]; then
+    touch results/{sentinel}
+fi
+exit $EXIT_CODE
 """
 
 
@@ -85,8 +96,21 @@ class LocalCPUManager:
                 count += 1
         return count
 
-    def can_submit(self) -> bool:
-        """Check if we have capacity to submit another job."""
+    def total_slots(self) -> int:
+        """Total concurrent CPU experiment slots (one slot = one experiment)."""
+        return self.max_parallel
+
+    def can_submit(self, exp: Experiment | None = None) -> bool:
+        """Check if we have capacity to submit another job.
+
+        Parameters
+        ----------
+        exp : Experiment | None, optional
+            Accepted for interface consistency with other managers
+            (for example, SlurmManager.can_submit). Ignored here because
+            CPU submission capacity depends only on the current number
+            of running jobs, not on any per-experiment resource request.
+        """
         return self.running_count() < self.max_parallel
 
     def submit_experiment(self, exp: Experiment, workspace: str) -> str:
@@ -102,6 +126,7 @@ class LocalCPUManager:
             exp_dir=str(exp_dir),
             workspace=workspace,
             python_exe=self.python_executable,
+            sentinel=CANONICAL_RUN_COMPLETE_SENTINEL,
         )
         script_path = exp_dir / "run_cpu.sh"
         script_path.write_text(script_content)
@@ -116,6 +141,7 @@ class LocalCPUManager:
                 stdout=output_file,
                 stderr=subprocess.STDOUT,
                 cwd=str(exp_dir),
+                env={**os.environ, "ALPHALAB_WORKSPACE": str(Path(workspace).resolve())},
                 start_new_session=True,
             )
         except Exception:
@@ -173,24 +199,7 @@ class LocalCPUManager:
         if job_id not in self._jobs:
             return
         job = self._jobs[job_id]
-        if job.proc.poll() is None:
-            try:
-                os.killpg(os.getpgid(job.proc.pid), signal.SIGTERM)
-                job.proc.wait(timeout=5)
-            except (ProcessLookupError, ChildProcessError):
-                pass  # Process already exited
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(job.proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, ChildProcessError):
-                    pass  # Process already exited
-                # Reap the child to prevent zombie
-                try:
-                    job.proc.wait(timeout=5)
-                except (subprocess.TimeoutExpired, OSError):
-                    pass
-            except OSError as e:
-                logger.warning("Failed to kill CPU job %s: %s", job_id, e)
+        escalate_termination(job.proc, term_grace=5, kill_grace=5, process_group=True)
         self._cleanup_job(job_id)
 
     def cancel(self, job_id: str) -> None:
@@ -220,34 +229,47 @@ class LocalCPUManager:
         self._jobs.clear()
 
 
-def is_cpu_experiment(exp: Experiment) -> bool:
-    """Check if an experiment should run on CPU based on its config.
+def is_cpu_experiment(exp: Experiment, workspace: str = "") -> bool:
+    """Check if an experiment should run on CPU.
 
-    Experiments with model_type containing these keywords run on CPU:
-    - xgboost, lightgbm, gbdt, gradient_boost
-    - random_forest, decision_tree
-    - linear, lasso, ridge, elastic
-    - catboost
+    Priority:
+    1. Explicit resource tag in config ("cpu"/"gpu") — always honored.
+    2. Source code scan — if neither strategy.py nor run_experiment.py
+       references CUDA, the experiment cannot use the GPU.
     """
     import json
     try:
         config = json.loads(exp.config_json or "{}")
-        model_type = config.get("model_type", "").lower()
-        resource = config.get("resource", "").lower()
+        resource = config.get("resource", "").lower() if isinstance(config, dict) else ""
 
-        # Explicit resource tag takes precedence
         if resource == "cpu":
             return True
         if resource == "gpu":
             return False
-
-        # Infer from model type
-        cpu_keywords = [
-            "xgboost", "lightgbm", "gbdt", "gradient_boost",
-            "random_forest", "decision_tree", "tree",
-            "linear", "lasso", "ridge", "elastic",
-            "catboost", "sklearn",
-        ]
-        return any(kw in model_type for kw in cpu_keywords)
     except (json.JSONDecodeError, TypeError):
-        return False
+        pass
+
+    # Scan experiment source files for GPU usage indicators. Only classify
+    # as CPU if we actually read a file and found no GPU markers; a missing
+    # or unreadable source tree falls through to GPU so we don't silently
+    # route GPU workloads onto the CPU manager.
+    if workspace:
+        exp_dir = Path(workspace) / "experiments" / exp.name
+        gpu_markers = {"torch.device", ".cuda()", "CUDA", "torch.cuda", ".to(device",
+                       ".to(self.device", "gpu_id", "accelerator"}
+        scanned_source = False
+        for filename in ("strategy.py", "run_experiment.py"):
+            src_path = exp_dir / filename
+            if src_path.exists():
+                try:
+                    source = src_path.read_text()
+                    scanned_source = True
+                    if any(marker in source for marker in gpu_markers):
+                        return False
+                except OSError:
+                    pass
+
+        return scanned_source
+
+    # No workspace provided, can't scan — fall back to False (assume GPU)
+    return False

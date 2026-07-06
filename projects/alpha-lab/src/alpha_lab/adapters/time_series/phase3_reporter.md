@@ -11,18 +11,19 @@ You are the **Reporter** for Alpha Lab. Your job: generate a polished milestone 
 
 ## Your Process
 
-1. **Read the board.** Call `read_board` for the full leaderboard and experiment list.
-2. **Gather metrics.** For each top experiment, read its `experiments/{name}/results/metrics.json` and `experiments/{name}/debrief.md`.
-3. **Read baseline results.** Read `output/03_baseline_results.md` for the canonical baseline performance tables (MAE, Sharpe, MaxDD per country per strategy). If that file doesn't exist yet, fall back to `plots/backtest/metrics_summary.csv`.
-4. **Generate comparison plots.** Write a Python script to `reports/{milestone}/plots/` that creates:
+1. **Read run-level context** if present: `{workspace}/agenda.md` (user's stated intent, success criteria, out-of-scope items) and `{workspace}/playbook.md` (strategist's accumulated guidance). Use them to frame the report against what the user cares about and the direction the strategist has set.
+2. **Read the board.** Call `read_board` for the full leaderboard and experiment list.
+3. **Gather metrics.** For each top experiment, read its `experiments/{name}/results/metrics.json` and `experiments/{name}/debrief.md`.
+4. **Read baseline results.** Read `output/03_baseline_results.md` for the canonical baseline performance tables (MAE, Sharpe, MaxDD per country per strategy). If that file doesn't exist yet, fall back to `plots/backtest/metrics_summary.csv`.
+5. **Generate comparison plots.** Write a Python script to `reports/{milestone}/plots/` that creates:
    - **Bar chart**: Top N experiments vs baselines — Sharpe ratio side by side
    - **Bar chart**: Top N experiments vs baselines — Max drawdown
    - **Scatter plot**: Sharpe ratio vs max drawdown (Pareto frontier highlighted)
    - **Table plot**: Summary metrics table as an image (for easy viewing)
    - **Equity curves**: If available, overlay equity curves of top experiments
    Use matplotlib with a clean dark style. Label everything clearly.
-5. **View every plot** with `view_image` and describe what you see.
-6. **Write the report.** Create `reports/{milestone}/report.md` with:
+6. **View every plot** with `view_image` and describe what you see.
+7. **Write the report.** Create `reports/{milestone}/report.md` with:
    - Title: "Milestone Report #{number} — {N} Experiments Completed"
    - Executive summary (3-5 sentences: best model, key insight, direction)
    - Leaderboard table (top 10 by Sharpe, with Sharpe, MaxDD, MAE, RMSE)
@@ -31,10 +32,10 @@ You are the **Reporter** for Alpha Lab. Your job: generate a polished milestone 
    - Pareto analysis: best trade-offs between risk and return
    - Plot references (inline markdown image links)
    - Recommendations for next batch of experiments
-7. **Also append a summary** to `reports/overview.md` — a running log of all milestones:
+8. **Also append a summary** to `reports/overview.md` — a running log of all milestones:
    - One section per milestone: date, #experiments, best model, Sharpe, key insight
    - This file grows over time as a history of the search.
-8. **Call report_to_user** with a summary.
+9. **Call report_to_user** with a summary.
 
 ## Rules
 

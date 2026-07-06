@@ -1,0 +1,179 @@
+@startuml
+title Agent sandboxing — run_agent dispatch, bwrap child, and stdio relay
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam BoxPadding 10
+
+actor "Owner / orchestrator\n(pipeline / worker / strategist)" as Owner
+
+box "run-scoped deps" #LightBlue
+    participant "RunDeps\n(deps.get())" as Deps
+end box
+
+box "parent process — alpha_lab.sandboxing" #LightYellow
+    participant "run_agent" as RunSpec
+    participant "AgentRunHandle\n(handle)" as Handle
+    participant "_relay\n(+ stderr drain thread)" as Relay
+end box
+
+box "alpha_lab.tools / agents" #LightPink
+    participant "load_agent" as Load
+    participant "build_minimal_workspace_\naccess_schema_for_tools" as Access
+    participant "build_agent" as BuildAgent
+end box
+
+box "parent-owned stores" #Lavender
+    participant "ExperimentDB / MemoryStore" as Stores
+end box
+
+box "child process (bwrap) — sandboxing.runner" #LightGray
+    participant "runner.main" as Child
+    participant "ProxyChannel\n(db / memory proxy)" as Proxy
+    participant "AgentLoop" as Loop
+end box
+
+== dispatch ==
+
+Owner -> RunSpec : run_agent(agent_id, event_callback, *,\n  initial_message, …, provider, db,\n  adapter, metrics, owner,\n  handle_attr="_run_handle")
+RunSpec -> Deps : deps.get()
+note right of Deps
+  config / workspace / api_key are
+  run-level constants, not call args.
+  run.py wraps the whole pipeline in
+  one `with RunDeps(config, workspace,
+  api_key)`, so run_agent / build_agent
+  read them here.
+end note
+Deps --> RunSpec : run (config, workspace, api_key)
+RunSpec -> RunSpec : runtime = {workspace, initial_message,\n  config, db_path, extra_context, log_name,\n  tools_include, mlflow_run_target, api_key}
+RunSpec -> Load : load_agent(agent_id)
+Load --> RunSpec : agent_definition
+RunSpec -> Handle : AgentRunHandle()
+RunSpec -> Owner : owner.<handle_attr> = handle\n(default _run_handle; published before\n blocking, so stop()/done can reach it)
+
+alt _is_available() is False  (no bwrap / ALPHALAB_AGENT_NOSANDBOX)
+    RunSpec -> BuildAgent : build_agent(agent_definition,\n  event_callback, provider, db,\n  adapter, metrics,\n  **build_kwargs_from_runtime(runtime))
+    note right of BuildAgent
+      build_kwargs excludes config / workspace /
+      api_key / initial_message — build_agent
+      reads config / workspace / api_key from the
+      active RunDeps via deps.get().
+    end note
+    BuildAgent --> RunSpec : agent
+    RunSpec -> Handle : _attach_agent(agent)\n(flush buffered stop/answer)
+    RunSpec -> Loop : agent.run(initial_message)
+    note right of Loop
+      In-process: the agent uses the real
+      ExperimentDB / MemoryStore directly;
+      events go straight to event_callback.
+    end note
+    Loop --> RunSpec : returns
+    RunSpec -> Owner : return handle
+else bwrap available  (sandboxed path)
+    RunSpec -> Access : build_minimal_workspace_access_schema_for_tools(\n  tools_for_run, workspace)
+    note right of Access
+      Footprints (workspace-relative paths) are
+      joined under workspace and expanded to their
+      mount closure (link + resolved target +
+      reachable symlinks), then nesting collapses.
+    end note
+    Access --> RunSpec : access (ro / rw path sets)
+    RunSpec -> RunSpec : rw_mounts = access.rw + infra_rw\n(logs/, learnings.md, .memory/learnings_archive\n unless already covered)
+    RunSpec -> RunSpec : _create_rw_sources(rw_mounts)\n(missing path: ext → touch file, else mkdir dir)
+    RunSpec -> RunSpec : ro_paths = access.ro + data_path
+
+    RunSpec -> Child : _popen([python -m sandboxing.runner],\n  ro_paths, rw_paths, chdir=workspace,\n  project_ro_root=repo, needs_gpu)
+    note right of RunSpec
+      _build_bwrap_prefix:
+      --unshare-pid --die-with-parent --new-session,
+      RO /usr /etc /sys + repo + venv + ro_paths,
+      RW bind rw_paths, --dev/--proc/--tmpfs,
+      NVIDIA dev-binds when needs_gpu.
+      stdin/stdout/stderr = pipes (text).
+    end note
+    Child --> RunSpec : Popen proc
+
+    RunSpec -> RunSpec : child_runtime = {**runtime,\n  config=asdict(config)}\npayload = {agent_id, runtime,\n  otel_carrier=inject_context()}
+    RunSpec -> Handle : _attach_proc(proc, payload)
+    Handle -> Child : stdin: payload line\n(single JSON line, then flush)
+    RunSpec -> RunSpec : backends = {memory: MemoryStore(workspace),\n  experiments: db (if any)}
+    RunSpec -> Relay : _relay(proc, event_callback,\n  handle, metrics, backends)
+
+    == bwrap boundary ==
+
+    Child -> Child : read payload line; load_agent(agent_id);\nconfig=task_config_from_mapping;\ninit MLflow/OTel + attach otel_carrier;\nRunDeps(config, workspace, api_key).open()
+    note right of Child
+      Separate process: the parent's RunDeps global
+      can't cross, so the child opens its own from
+      the serialized config / workspace / api_key.
+      build_agent below reads them from it.
+    end note
+    Child -> Proxy : ProxyChannel(_write_line);\ndb_proxy / memory_proxy = BackendProxy(...)
+    Child -> BuildAgent : build_agent(agent_definition,\n  event_callback=_emit, metrics,\n  db=db_proxy, memory_store=memory_proxy,\n  **build_kwargs)
+    BuildAgent -> Loop : AgentLoop(...)
+    Loop --> BuildAgent : agent
+    BuildAgent --> Child : agent
+    Child -> Child : agent._ask_user_fn = ask_user_via_stdio;\nstart read_control thread (stdin)
+    Child -> Loop : agent.run(initial_message)
+
+    loop while child runs — JSONL over stdout
+        Loop -> Child : event / MetricsEvent delta
+        Child -> Relay : stdout: JSON line
+
+        alt line is an AgentEvent
+            Relay -> Owner : event_callback(event)\n(track StatusEvent done;\n metrics.merge_counters on MetricsEvent)
+        else line is a backend_request (store proxy)
+            Loop -> Proxy : board / memory tool call
+            Proxy -> Child : _write_line(backend_request,\n  target, req_id, method, args)
+            Child -> Relay : stdout: backend_request
+            Relay -> RunSpec : _service_backend_request(...)
+            RunSpec -> Stores : getattr(backend, method)(*args)\n(commit before replying)
+            Stores --> RunSpec : result / error
+            RunSpec -> Handle : _send_backend_response(\n  backend_response, encode_result)
+            Handle -> Child : stdin: backend_response
+            Child -> Proxy : channel.deliver(message)
+            Proxy --> Loop : decode_result → unblocks the tool
+        end
+    end
+
+    == external control (any time) ==
+    Owner -> Handle : stop() / provide_answer(text)
+    Handle -> Child : stdin: {"stop"} / {"answer", text}
+    note right of Handle
+      stop() over stdin, then escalate
+      via process_control.escalate_termination:
+      cooperative grace → SIGTERM → SIGKILL
+      (--die-with-parent tears down the
+      whole PID namespace).
+    end note
+    Child -> Loop : agent.stop() / answers.put(text)
+
+    == teardown ==
+    Loop --> Child : run ends
+    Child -> Child : detach otel; run_deps.close();\nclose stdout/stderr
+    Child --> Relay : stdout / stderr reach EOF
+    Relay -> Relay : return_code = proc.wait();\njoin stderr drain thread
+    alt return_code != 0
+        Relay -> Owner : event_callback(ErrorEvent(\n  exit code + last _MAX_RELAYED_STDERR chars))
+        Relay -> Owner : event_callback(StatusEvent(status="error"))
+    end
+    Relay --> RunSpec : relay loop done
+    RunSpec -> Owner : return handle
+end
+
+RunSpec -> Owner : finally: owner.<handle_attr> = None
+
+note over Owner, Loop
+  build_agent is the single construction site for both paths, so a sandboxed
+  agent is byte-identical to an in-process one. config / workspace / api_key
+  come from the active RunDeps (deps.get()), not from call args; they still
+  cross the bwrap boundary in the payload so the child can open its own RunDeps.
+  Under bwrap the child never opens experiments.db / memory.db itself (two
+  processes on one SQLite file is unsafe, esp. on NFS) — its board and memory
+  tools reach the parent's single connection through the ProxyChannel over
+  stdio. Metrics cross as additive MetricsEvent deltas, so a hard child crash
+  loses at most the last counter.
+end note
+
+@enduml

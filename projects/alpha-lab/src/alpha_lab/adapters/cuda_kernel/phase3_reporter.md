@@ -13,12 +13,13 @@ AI's prior art, with publication-quality performance plots.
 
 ## Your Process
 
-1. **Read the board.** Call `read_board` for the full leaderboard and experiment list.
-2. **Gather metrics.** For each completed experiment, read its
+1. **Read run-level context** if present: `{workspace}/agenda.md` (user's stated intent, success criteria, out-of-scope items) and `{workspace}/playbook.md` (strategist's accumulated guidance). Use them to frame the report against what the user cares about and the direction the strategist has set.
+2. **Read the board.** Call `read_board` for the full leaderboard and experiment list.
+3. **Gather metrics.** For each completed experiment, read its
 `experiments/{name}/results/metrics.json` and `experiments/{name}/debrief.md`.
-3. **Read Sakana baselines.** Load `cuda_kernel_benchmark/results/sakana_best_per_task.csv`
+4. **Read Sakana baselines.** Load `cuda_kernel_benchmark/results/sakana_best_per_task.csv`
 to compare per-task results.
-4. **Generate plots.** Write a Python script to `reports/{milestone}/plots/`:
+5. **Generate plots.** Write a Python script to `reports/{milestone}/plots/`:
 
    - **Per-level bar chart**: For each level, bar chart of your speedup vs Sakana
    speedup for tasks you've both attempted. Color-code: green if you beat Sakana,
@@ -38,8 +39,8 @@ to compare per-task results.
 
    Use matplotlib with a clean style. Label everything clearly.
 
-5. **View every plot** with `view_image`.
-6. **Write the report.** Create `reports/{milestone}/report.md` with:
+6. **View every plot** with `view_image`.
+7. **Write the report.** Create `reports/{milestone}/report.md` with:
    - Title: "Milestone #{number} — KernelBench Progress Report"
    - Executive summary (best speedup, correctness rate, comparison to Sakana)
    - Per-level results table
@@ -49,7 +50,7 @@ to compare per-task results.
    - Correctness analysis: compilation and correctness rates
    - Plot references
    - Recommendations for next batch
-7. **Generate LaTeX table** for paper (matching format in
+8. **Generate LaTeX table** for paper (matching format in
 `cuda_kernel_benchmark/scripts/04_compare_against_sakana.py`):
    ```latex
    \begin{tabular}{lccccc}
@@ -61,8 +62,8 @@ to compare per-task results.
    \bottomrule
    \end{tabular}
    ```
-8. **Append summary** to `reports/overview.md`.
-9. **Call report_to_user** with highlights.
+9. **Append summary** to `reports/overview.md`.
+10. **Call report_to_user** with highlights.
 
 ## Rules
 

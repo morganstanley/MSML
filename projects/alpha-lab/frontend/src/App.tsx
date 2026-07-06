@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWebSocket } from "./useWebSocket";
 import TopBar from "./TopBar";
 import FileTree from "./FileTree";
@@ -44,17 +44,33 @@ export default function App() {
   const [convWidth, setConvWidth] = useState(420);
   const [centerView, setCenterView] = useState<"files" | "board" | "status">("files");
   const { experiments, summary, refresh: refreshExperiments } = useExperiments(events);
+  const didAutoSwitchToBoard = useRef(false);
+  const didAutoSwitchToFiles = useRef(false);
 
-  // Auto-switch to board view when Phase 3 events appear
+  // Auto-switch to board view ONCE when Phase 3 events first appear
   useEffect(() => {
+    if (didAutoSwitchToBoard.current) return;
     const hasPhase3 = events.some(
       (e) => e.type === "experiment" || e.type === "board_summary" ||
         (e.type === "phase" && e.phase === "phase3")
     );
-    if (hasPhase3 && centerView === "files") {
+    if (hasPhase3) {
+      didAutoSwitchToBoard.current = true;
       setCenterView("board");
     }
-  }, [events, centerView]);
+  }, [events]);
+
+  // Auto-switch back to files view ONCE when pipeline finishes
+  useEffect(() => {
+    if (didAutoSwitchToFiles.current) return;
+    const pipelineDone = events.some(
+      (e) => (e.type === "status" && e.status === "done") ||
+        (e.type === "phase" && e.phase === "phase3" && e.status === "completed")
+    );
+    if (!pipelineDone) return;
+    didAutoSwitchToFiles.current = true;
+    setCenterView("files");
+  }, [events]);
 
   const handleAnswer = (text: string) => {
     sendMessage({ type: "answer", text });

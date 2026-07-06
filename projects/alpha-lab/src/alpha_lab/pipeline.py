@@ -1,7 +1,8 @@
 """Multi-agent pipeline orchestrator for alpha-lab.
 
-Runs the builder→critic→tester loop for Phase 2, creating fresh AgentLoop
-instances per step with their own prompt, tool set, and JSONL log.
+Runs the builder→critic→tester loop for Phase 2, running each step as a fresh
+agent via ``sandbox.run_agent`` (sandboxed when bwrap is available) with its own
+prompt, tool set, and JSONL log.
 """
 
 from __future__ import annotations
@@ -14,13 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from alpha_lab.agent import AgentLoop
+from alpha_lab.agents import load_agent
+from alpha_lab.sandboxing import sandbox
 from alpha_lab.config import TaskConfig
-from alpha_lab.context import ContextManager
 from alpha_lab.events import AgentEvent, PhaseEvent, StatusEvent
-from alpha_lab.prompts import build_step_prompt
 from alpha_lab.provider import Provider
-from alpha_lab.tools import get_tool_schemas
 
 logger = logging.getLogger("alpha_lab.pipeline")
 
@@ -41,26 +40,42 @@ def _extract_verdict(content: str) -> str:
     - "Final verdict: PASS" / "Final verdict: NEEDS FIXES"
     - "**Verdict**: PASS" / "**Verdict**: NEEDS FIXES"
     - Lines starting with "## Verdict" followed by PASS/NEEDS FIXES
+    - Markdown heading with just the verdict: "# PASS"
+    - Bare PASS/NEEDS FIXES on its own line
 
     Returns "PASS", "NEEDS FIXES", or "UNCLEAR".
     """
     # Normalize whitespace
     content = content.strip()
+    tail_content = content[-500:]
 
-    # Patterns to look for verdict (case-insensitive)
+    # (pattern, scope) — "tail" restricts the match to the last 500 chars so
+    # weak patterns (bold, heading-only, bare-line) don't pick up verdicts
+    # that appear in instruction text, examples, or code blocks earlier in
+    # the document. Strong patterns that require the word "verdict" nearby
+    # remain "all" because they're unambiguous anywhere in the review.
     verdict_patterns = [
         # "Final verdict: PASS" or "Final verdict: NEEDS FIXES"
-        r'final\s+verdict[:\s*]+\**(PASS|NEEDS\s*FIXES)\**',
+        (r'final\s+verdict[:\s*]+\**(PASS|NEEDS\s*FIXES)\**', "all"),
         # "Verdict: PASS" or "Verdict: NEEDS FIXES"
-        r'(?<!\w)verdict[:\s*]+\**(PASS|NEEDS\s*FIXES)\**',
+        (r'(?<!\w)verdict[:\s*]+\**(PASS|NEEDS\s*FIXES)\**', "all"),
         # Markdown header "## Verdict" followed by verdict on same/next line
-        r'##\s*(?:final\s+)?verdict[:\s]*(PASS|NEEDS\s*FIXES)',
-        # Bold verdict "**PASS**" or "**NEEDS FIXES**" at end of document (last 500 chars)
-        r'\*\*(PASS|NEEDS\s*FIXES)\*\*',
+        (r'##\s*(?:final\s+)?verdict[:\s]*(PASS|NEEDS\s*FIXES)', "all"),
+        # Bold verdict "**PASS**" or "**NEEDS FIXES**" — tail only
+        (r'\*\*(PASS|NEEDS\s*FIXES)\*\*', "tail"),
+        # Markdown heading with just the verdict: "# PASS" or "## NEEDS FIXES"
+        # — tail only: instruction text / templates often contain example
+        # headings like "## PASS" to illustrate the format.
+        (r'^#{1,3}\s+(PASS|NEEDS\s*FIXES)\s*$', "tail"),
+        # Bare verdict on its own line (no surrounding words)
+        # — tail only: same reason; code blocks and examples can emit
+        # standalone PASS / NEEDS FIXES lines.
+        (r'^\s*(PASS|NEEDS\s*FIXES)\s*$', "tail"),
     ]
 
-    for pattern in verdict_patterns:
-        match = re.search(pattern, content, re.IGNORECASE)
+    for pattern, scope in verdict_patterns:
+        haystack = tail_content if scope == "tail" else content
+        match = re.search(pattern, haystack, re.IGNORECASE | re.MULTILINE)
         if match:
             verdict = match.group(1).upper()
             if "NEEDS" in verdict:
@@ -166,14 +181,14 @@ def detect_phase2_progress(workspace: str, adapter: Any | None = None) -> str:
 
 @dataclass
 class StepConfig:
-    """Configuration for a single pipeline step."""
+    """Configuration for a single pipeline step.
+
+    Tools, reasoning_effort, min_report_attempts, and include_web_search are
+    loaded from the agent file at `agents/phase2/{name}.md` at runtime.
+    """
 
     name: str                       # "builder", "critic", "tester"
     prompt_key: str                 # key into PROMPT_REGISTRY
-    tool_names: list[str]           # tool names from TOOL_REGISTRY
-    include_web_search: bool = False
-    reasoning_effort: str = "low"
-    min_report_attempts: int = 1    # critics/testers can finish on first call
 
 
 @dataclass
@@ -186,24 +201,9 @@ class StepResult:
 
 
 # Step definitions
-BUILDER_STEP = StepConfig(
-    name="builder",
-    prompt_key="phase2_builder",
-    tool_names=["shell_exec", "view_image", "read_file", "grep_file", "report_to_user"],
-)
-
-CRITIC_STEP = StepConfig(
-    name="critic",
-    prompt_key="phase2_critic",
-    tool_names=["read_file", "grep_file", "shell_exec", "report_to_user"],
-    reasoning_effort="medium",
-)
-
-TESTER_STEP = StepConfig(
-    name="tester",
-    prompt_key="phase2_tester",
-    tool_names=["read_file", "grep_file", "shell_exec", "report_to_user"],
-)
+BUILDER_STEP = StepConfig(name="builder", prompt_key="phase2_builder")
+CRITIC_STEP = StepConfig(name="critic", prompt_key="phase2_critic")
+TESTER_STEP = StepConfig(name="tester", prompt_key="phase2_tester")
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +231,7 @@ class Pipeline:
         self.workspace = workspace
         self.event_callback = event_callback
         self.adapter = adapter
-        self._current_agent: AgentLoop | None = None
+        self._current_agent: sandbox.AgentRunHandle | None = None
         self._stop_requested = False
 
     def stop(self) -> None:
@@ -288,12 +288,15 @@ class Pipeline:
 
                 # Builder (skip on first iteration if resuming from critic)
                 if not (iteration == 0 and skip_builder):
-                    builder_msg = "Build the backtesting framework in backtest/. Go."
+                    fw_dir = self._framework_dir_name()
+                    builder_msg = (
+                        f"Build the evaluation framework in {fw_dir}/. Go."
+                    )
                     if iteration > 0:
                         # Feed review feedback
                         review_content = self._read_review()
                         builder_msg = (
-                            f"The critic found issues in your backtest/ code. "
+                            f"The critic found issues in your {fw_dir}/ code. "
                             f"Fix them and rebuild. Here is the review:\n\n{review_content}\n\n"
                             f"Fix all issues. Go."
                         )
@@ -348,7 +351,10 @@ class Pipeline:
 
                 critic_result = self._run_step(
                     CRITIC_STEP,
-                    initial_message="Review the backtest/ directory for correctness. Go.",
+                    initial_message=(
+                        f"Review the {self._framework_dir_name()}/ directory "
+                        f"for correctness. Go."
+                    ),
                     extra_context=None,
                     iteration=iteration,
                 )
@@ -390,13 +396,14 @@ class Pipeline:
             if self._stop_requested:
                 return
 
-            tester_msg = "Write tests for backtest/ and run them. Go."
+            fw_dir = self._framework_dir_name()
+            tester_msg = f"Write tests for {fw_dir}/ and run them. Go."
             if iteration > 0:
                 # Feed test failure output
                 test_output = self._run_tests()
                 tester_msg = (
                     f"Tests failed. Here is the output:\n\n{test_output}\n\n"
-                    f"Fix the backtest code and/or tests, then re-run. Go."
+                    f"Fix the {fw_dir}/ code and/or tests, then re-run. Go."
                 )
                 # Re-run builder to fix, then re-test
                 self.emit(PhaseEvent(
@@ -408,7 +415,7 @@ class Pipeline:
                 ))
 
                 fix_msg = (
-                    f"Tests failed. Fix the backtest code. "
+                    f"Tests failed. Fix the {fw_dir}/ code. "
                     f"Test output:\n\n{test_output}\n\nFix the issues. Go."
                 )
                 fix_result = self._run_step(
@@ -519,54 +526,24 @@ class Pipeline:
         extra_context: str | None,
         iteration: int = 0,
     ) -> StepResult:
-        """Run a single pipeline step as a fresh AgentLoop."""
-        log_name = f"phase2_{step.name}_{iteration}"
+        """Run a single pipeline step as a fresh agent (sandboxed when bwrap is available)."""
+        agent_definition = load_agent(f"phase2/{step.name}")
+        log_name = f"{agent_definition.log_name}_{iteration}"
 
-        # Build prompt builder closure that includes extra_context and adapter
-        def prompt_builder(
-            workspace: str | None,
-            learnings: str | None,
-            config: Any | None = None,
-        ) -> str:
-            return build_step_prompt(
-                step.prompt_key,
-                workspace,
-                learnings,
-                config,
-                extra_context,
-                adapter=self.adapter,
-            )
-
-        tools = get_tool_schemas(step.tool_names, include_web_search=step.include_web_search)
-
-        context = ContextManager(
-            provider=self.provider,
-            model=self.config.model,
-            workspace=self.workspace,
-        )
-
-        agent = AgentLoop(
-            provider=self.provider,
-            model=self.config.model,
-            context=context,
-            event_callback=self.event_callback,
-            reasoning_effort=step.reasoning_effort,
-            config=self.config,
-            tools=tools,
-            prompt_builder=prompt_builder,
+        handle = sandbox.run_agent(
+            f"phase2/{step.name}",
+            self.event_callback,
+            initial_message=initial_message,
+            extra_context=extra_context,
             log_name=log_name,
-            min_report_attempts=step.min_report_attempts,
+            provider=self.provider,
             adapter=self.adapter,
+            owner=self,
+            handle_attr="_current_agent",
         )
-
-        self._current_agent = agent
-        try:
-            agent.run(initial_message)
-        finally:
-            self._current_agent = None
 
         # Check if agent actually finished successfully (called report_to_user)
-        agent_succeeded = agent._done and not self._stop_requested
+        agent_succeeded = handle.done and not self._stop_requested
         return StepResult(
             step=step.name,
             completed=agent_succeeded,
@@ -589,20 +566,56 @@ class Pipeline:
 
         return "\n\n---\n\n".join(parts) if parts else ""
 
+    def _framework_dir_name(self) -> str:
+        """Return the adapter's framework directory name, falling back to ``backtest``."""
+        if self.adapter is not None:
+            return self.adapter.experiment.framework_dir
+        return "backtest"
+
     def _read_review(self) -> str:
         """Read the review file from the framework directory."""
-        framework_dir = "backtest"
+        framework_dir = self._framework_dir_name()
         review_file = "review.md"
         if self.adapter is not None:
-            framework_dir = self.adapter.experiment.framework_dir
             review_file = self.adapter.phase2_review_file
-        review_path = Path(self.workspace) / framework_dir / review_file
-        if review_path.exists():
-            return review_path.read_text()
-        return f"(no {review_file} found)"
+        review_relpath_obj = Path(framework_dir) / review_file
+        if review_relpath_obj.is_absolute():
+            logger.warning("Adapter review path must be workspace-relative: %s", review_relpath_obj)
+            return f"(no {review_file} found)"
+
+        workspace_root = Path(self.workspace).resolve()
+        review_path = (workspace_root / review_relpath_obj).resolve()
+        try:
+            review_relpath = review_path.relative_to(workspace_root).as_posix()
+        except ValueError:
+            logger.warning("Adapter review path escapes workspace: %s", review_relpath_obj)
+            return f"(no {review_file} found)"
+
+        try:
+            content = review_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return f"(no {review_file} found)"
+
+        verdict = _extract_verdict(content)
+        if verdict != "PASS":
+            try:
+                from alpha_lab.memory import remember_text
+                remember_text(
+                    self.workspace,
+                    content,
+                    tags=["phase2", "review"],
+                    summary=f"{framework_dir} review found issues",
+                    kind="failure",
+                    phase="phase2",
+                    agent="critic",
+                    source_path=review_relpath,
+                )
+            except Exception as e:
+                logger.warning("Failed to ingest review into memory: %s", e, exc_info=True)
+        return content
 
     def _review_passes(self) -> bool:
-        """Check if backtest/review.md indicates PASS verdict."""
+        """Check if the framework's review file indicates PASS verdict."""
         content = self._read_review()
         verdict = _extract_verdict(content)
         return verdict == "PASS"
@@ -610,9 +623,7 @@ class Pipeline:
     def _run_tests(self) -> str:
         """Run pytest on the framework's tests/ directory and return output."""
         import subprocess
-        framework_dir = "backtest"
-        if self.adapter is not None:
-            framework_dir = self.adapter.experiment.framework_dir
+        framework_dir = self._framework_dir_name()
 
         try:
             result = subprocess.run(
@@ -639,10 +650,9 @@ class Pipeline:
     def save_canonical_baselines(self) -> bool:
         """Run the backtest and save metrics to ``output/baseline_metrics.csv``.
 
-        Called after Phase 2 completes.  Runs ``backtest.run_backtest``
-        with all standard horizons (1, 5, 20, 60) and searches for the
-        resulting metrics file.  Falls back to discovering whatever the
-        LLM agent may have already produced.
+        Called after Phase 2 completes. Invokes the framework's entry point
+        with its own defaults — the Phase-2 agent owns any domain-specific
+        options. Falls back to discovering whatever the agent already produced.
 
         Returns True if a canonical CSV was written.
         """
@@ -652,14 +662,33 @@ class Pipeline:
         out_dir.mkdir(parents=True, exist_ok=True)
         canonical = out_dir / "baseline_metrics.csv"
 
-        # --- Step 1: Run the backtest script with all horizons ---------------
+        # --- Step 1: Run the framework entry point with its own defaults -----
+        # adapter.experiment.entry_point is the *per-experiment* script that
+        # lives in each experiment dir (e.g. run_experiment.py). For the
+        # framework-level baseline we want a runner that lives in framework_dir
+        # itself — conventionally named run_*.py (e.g. run_backtest.py).
+        entry_module = "backtest.run_backtest"
+        if self.adapter is not None:
+            framework = self.adapter.experiment.framework_dir
+            framework_files = self.adapter.experiment.framework_files or []
+            framework_path = Path(self.workspace) / framework if framework else None
+            runner = next(
+                (
+                    f for f in framework_files
+                    if f.startswith("run_") and f.endswith(".py")
+                    and framework_path and (framework_path / f).exists()
+                ),
+                None,
+            )
+            if runner and framework:
+                entry_module = f"{framework}.{Path(runner).stem}"
+            elif framework and framework_path and (framework_path / "run_backtest.py").exists():
+                entry_module = f"{framework}.run_backtest"
+
         result = None
         try:
             result = subprocess.run(
-                [
-                    sys.executable, "-m", "backtest.run_backtest",
-                    "--horizons", "1", "5", "20", "60",
-                ],
+                [sys.executable, "-m", entry_module],
                 cwd=self.workspace,
                 capture_output=True,
                 text=True,
@@ -667,22 +696,29 @@ class Pipeline:
             )
             if result.returncode != 0:
                 logger.warning(
-                    "run_backtest exited %d: %s",
+                    "%s exited %d: %s",
+                    entry_module,
                     result.returncode,
                     (result.stderr or result.stdout)[-500:],
                 )
         except Exception as e:
-            logger.warning("run_backtest failed: %s", e)
+            logger.warning("%s failed: %s", entry_module, e)
 
         # --- Step 2: Find and copy the metrics to canonical path -------------
-        # Search well-known locations first, then broad discovery
+        # Search well-known locations first, then broad discovery.
+        # The schema check below (country+strategy) is still time-series specific;
+        # for non-time-series frameworks this function logs a warning and returns
+        # False — the richer framework-agnostic discovery lives in output_generator.
         import csv as _csv
         import glob
 
+        framework_dir_name = "backtest"
+        if self.adapter is not None and self.adapter.experiment.framework_dir:
+            framework_dir_name = self.adapter.experiment.framework_dir
         search_paths = [
-            glob.glob(str(Path(self.workspace) / "plots" / "backtest" / "metrics_summary.csv")),
-            glob.glob(str(Path(self.workspace) / "plots" / "backtest" / "*.csv")),
-            glob.glob(str(Path(self.workspace) / "backtest" / "metrics_summary.csv")),
+            glob.glob(str(Path(self.workspace) / "plots" / framework_dir_name / "metrics_summary.csv")),
+            glob.glob(str(Path(self.workspace) / "plots" / framework_dir_name / "*.csv")),
+            glob.glob(str(Path(self.workspace) / framework_dir_name / "metrics_summary.csv")),
         ]
         for candidates in search_paths:
             for c in candidates:

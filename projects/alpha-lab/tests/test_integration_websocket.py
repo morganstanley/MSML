@@ -18,7 +18,7 @@ def setup_ws_server(tmp_workspace: str) -> None:
     srv._config_path = None
     srv.event_history.clear()
     srv.connected_websockets.clear()
-    srv.manager = srv.AgentManager()
+    srv.manager = srv.DashboardState()
     srv.manager.db = None
 
 
@@ -42,7 +42,7 @@ class TestWebSocketHistory:
         srv.event_history.extend([
             {"type": "status", "status": "starting", "detail": "Agent starting"},
             {"type": "status", "status": "thinking", "detail": "Calling API..."},
-            {"type": "agent_text", "delta": "Hello", "full_text": "Hello"},
+            {"type": "phase", "phase": "phase1", "detail": "Entering phase 1"},
         ])
 
         client = get_client()
@@ -56,7 +56,7 @@ class TestWebSocketHistory:
             assert len(received) == 3
             assert received[0]["type"] == "status"
             assert received[0]["status"] == "starting"
-            assert received[2]["type"] == "agent_text"
+            assert received[2]["type"] == "phase"
 
 
 class TestWebSocketCommands:

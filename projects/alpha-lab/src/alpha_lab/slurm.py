@@ -9,7 +9,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from alpha_lab.experiment_db import Experiment
+from alpha_lab.experiment_db import (
+    CANONICAL_RUN_COMPLETE_SENTINEL,
+    Experiment,
+)
 
 logger = logging.getLogger("alpha_lab.slurm")
 
@@ -22,6 +25,9 @@ SBATCH_TEMPLATE = """\
 #SBATCH --time={time_limit}
 #SBATCH --output={output_path}
 cd {workspace}/experiments/{name}
+# Clear stale metrics.json with the sentinel: a leftover metrics.json
+# from a prior run could let an exit-0 rerun trigger a false sentinel.
+rm -f results/{sentinel} results/metrics.json
 export PYTHONPATH={workspace}:$PYTHONPATH
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 {python_exe} -c "
@@ -50,6 +56,11 @@ except Exception:
 sys.argv = ['run_experiment.py']
 runpy.run_path('run_experiment.py', run_name='__main__')
 "
+EXIT_CODE=$?
+if [ $EXIT_CODE -eq 0 ] && [ -f results/metrics.json ]; then
+    touch results/{sentinel}
+fi
+exit $EXIT_CODE
 """
 
 
@@ -71,6 +82,10 @@ class SlurmManager:
         self.python_executable = python_executable or sys.executable
         self._partition_cycle = itertools.cycle(partitions)
 
+    def total_slots(self) -> int:
+        """Total concurrent experiment slots (one slot = one job = gpu_per_job GPUs)."""
+        return self.max_gpus // max(1, self.gpu_per_job)
+
     def generate_sbatch_script(self, exp: Experiment, workspace: str) -> str:
         partition = next(self._partition_cycle)
         exp_dir = os.path.join(workspace, "experiments", exp.name)
@@ -82,6 +97,7 @@ class SlurmManager:
             output_path=output_path,
             workspace=workspace,
             python_exe=self.python_executable,
+            sentinel=CANONICAL_RUN_COMPLETE_SENTINEL,
         )
 
     def submit(self, script_path: str) -> str:
@@ -181,7 +197,13 @@ class SlurmManager:
         return result_map
 
     def running_gpu_count(self) -> int:
-        """Count GPUs currently used by our running/pending jobs."""
+        """Count GPUs currently used by our running/pending jobs.
+
+        If squeue fails or output can't be parsed, return a conservative
+        estimate (``max_gpus``) so the scheduler treats the cluster as
+        fully booked rather than empty — otherwise a transient failure
+        would invite oversubmission.
+        """
         try:
             result = subprocess.run(
                 ["squeue", "--me", "--format=%i %T %b", "--noheader"],
@@ -190,7 +212,11 @@ class SlurmManager:
                 timeout=15,
             )
             if result.returncode != 0:
-                return 0
+                logger.warning(
+                    "squeue exited with code %s (stderr=%r); assuming GPUs are full",
+                    result.returncode, result.stderr.strip()[:200],
+                )
+                return self.max_gpus
 
             count = 0
             for line in result.stdout.strip().splitlines():
@@ -200,11 +226,19 @@ class SlurmManager:
                     if state in ("RUNNING", "PENDING"):
                         count += self.gpu_per_job
             return count
-        except (subprocess.SubprocessError, OSError, ValueError):
-            return 0
+        except Exception as e:
+            logger.warning(
+                "running_gpu_count failed (%s: %s); assuming GPUs are full",
+                type(e).__name__, e,
+            )
+            return self.max_gpus
 
-    def can_submit(self) -> bool:
-        """Check if we have GPU budget to submit another job."""
+    def can_submit(self, exp: Experiment | None = None) -> bool:
+        """Check if we have GPU budget to submit another job.
+
+        The exp parameter is accepted for interface consistency but ignored —
+        SLURM handles resource allocation internally.
+        """
         return self.running_gpu_count() + self.gpu_per_job <= self.max_gpus
 
     def submit_experiment(self, exp: Experiment, workspace: str) -> str:

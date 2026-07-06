@@ -70,14 +70,11 @@ export default function ExperimentCard({ experiment, onCancel }: Props) {
         {experiment.hypothesis || experiment.description}
       </div>
 
-      {Object.keys(metrics).length > 0 && (() => {
-        const [key, val] = Object.entries(metrics)[0];
-        return (
-          <div className="exp-card-metric">
-            {key}: {typeof val === "number" ? val.toFixed(3) : val}
-          </div>
-        );
-      })()}
+      {metrics.sharpe !== undefined && (
+        <div className="exp-card-metric">
+          Sharpe: {typeof metrics.sharpe === "number" ? metrics.sharpe.toFixed(3) : metrics.sharpe}
+        </div>
+      )}
 
       <div className="exp-card-footer">
         {experiment.worker_id && (

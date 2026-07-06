@@ -18,9 +18,14 @@ import time
 import traceback
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
 
-from alpha_lab.config import Phase3Config, TaskConfig
+from opentelemetry import trace
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from alpha_lab.adapter import DomainAdapter
+
+from alpha_lab.adapter_loader import resolve_adapter
 from alpha_lab.events import (
     AgentEvent,
     BoardSummaryEvent,
@@ -29,51 +34,20 @@ from alpha_lab.events import (
 )
 from alpha_lab.experiment_db import Experiment, ExperimentDB
 from alpha_lab.provider import Provider
-from alpha_lab.strategist import Strategist
+from alpha_lab import deps, utils
+from alpha_lab.strategist import StallError, Strategist
+from alpha_lab.tracing import (
+    GEN_AI_OPERATION_NAME,
+    GEN_AI_REQUEST_MODEL,
+    GEN_AI_SYSTEM,
+    GenAiOperationNameValues,
+    attach_context,
+    copy_context,
+    detach_context,
+    get_tracer,
+    provider_to_system,
+)
 from alpha_lab.worker import Worker
-
-
-class JobExecutor(Protocol):
-    """Protocol for job executors (SLURM or local)."""
-
-    def submit_experiment(self, exp: Experiment, workspace: str) -> str:
-        """Submit experiment, return job ID."""
-        ...
-
-    def poll_jobs(self, job_ids: list[str]) -> dict[str, str]:
-        """Poll job statuses. Returns {job_id: status}."""
-        ...
-
-    def cancel(self, job_id: str) -> None:
-        """Cancel a job."""
-        ...
-
-    def can_submit(self) -> bool:
-        """Check if capacity available."""
-        ...
-
-    def running_gpu_count(self) -> int:
-        """Count running jobs."""
-        ...
-
-
-class CPUExecutor(Protocol):
-    """Protocol for CPU executor (optional)."""
-
-    def submit_experiment(self, exp: Experiment, workspace: str) -> str:
-        ...
-
-    def poll_jobs(self, job_ids: list[str]) -> dict[str, str]:
-        ...
-
-    def cancel(self, job_id: str) -> None:
-        ...
-
-    def can_submit(self) -> bool:
-        ...
-
-    def running_count(self) -> int:
-        ...
 
 logger = logging.getLogger("alpha_lab.dispatcher")
 
@@ -86,30 +60,34 @@ class Dispatcher:
     def __init__(
         self,
         provider: Provider,
-        config: TaskConfig,
         workspace: str,
         db: ExperimentDB,
-        executor: JobExecutor,
         event_callback: Callable[[AgentEvent], None],
-        worker_count: int = 4,
+        adapter: DomainAdapter,
         metrics: object | None = None,
-        cpu_executor: CPUExecutor | None = None,
-        adapter: object | None = None,
         supervisor: object | None = None,
     ) -> None:
+        # Config + executors come from the active run deps (published by run.py around the
+        # dispatcher's lifecycle); they're read at point of use, not stored on self.
+        config = deps.get().config
         self.provider = provider
-        self.config = config
         self.workspace = workspace
         self.db = db
-        self.executor = executor  # GPU executor
-        self.cpu_executor = cpu_executor  # Optional CPU executor
         self.event_callback = event_callback
         self.metrics = metrics
         self.adapter = adapter
         self.supervisor = supervisor
         self._stop_requested = False
+        self._crashed = False
         # Track which jobs are CPU vs GPU for polling
         self._cpu_job_ids: set[str] = set()
+        # Set once when KILL_SIGNAL is first observed and queued/running
+        # work has been cancelled; prevents repeated cancellation.
+        self._kill_signal_actioned: bool = False
+
+        # OTel tracer — resolved once (same pattern as AgentLoop)
+        self._tracer = get_tracer()
+        self._gen_ai_system = provider_to_system(config.provider)
 
         p3 = config.pipeline.phase3
 
@@ -125,13 +103,12 @@ class Dispatcher:
                 metrics=metrics,
                 adapter=adapter,
             )
-            for i in range(worker_count)
+            for i in range(p3.worker_count)
         ]
 
         # Create strategist
         self.strategist = Strategist(
             provider=provider,
-            config=config,
             workspace=workspace,
             db=db,
             event_callback=event_callback,
@@ -160,17 +137,11 @@ class Dispatcher:
 
         # Convergence tracking
         self._convergence_threshold = p3.convergence_threshold
-        # Resolve metric: config override > adapter primary > fallback "sharpe"
         if p3.convergence_metric:
             self._convergence_metric = p3.convergence_metric
-        elif adapter is not None:
-            self._convergence_metric = adapter.metric.primary_metric
         else:
-            self._convergence_metric = "sharpe"
-        # Determine metric direction for convergence comparison
-        self._metric_direction = "maximize"
-        if adapter is not None:
-            self._metric_direction = adapter.metric.direction
+            self._convergence_metric = adapter.metric.primary_metric
+        self._metric_direction = adapter.metric.direction
         if self._metric_direction == "minimize":
             self._best_metric_value: float = float("inf")
         else:
@@ -206,6 +177,17 @@ class Dispatcher:
             except (OSError, TypeError, ValueError) as e:
                 logger.warning("Failed to write event to dispatcher log: %s", e)
 
+    @property
+    def crashed(self) -> bool:
+        """True if run() exited via an unhandled exception.
+
+        Callers (CLI, supervisor, tests) can read this after run() returns
+        instead of wrapping the call in a try/except; the dispatcher does
+        not re-raise so that the CLI driver doesn't abort the finally
+        cleanup block in run.py.
+        """
+        return self._crashed
+
     def stop(self, join_timeout: float = 30) -> None:
         """Stop the dispatcher and all workers, waiting for threads to finish."""
         self._stop_requested = True
@@ -222,23 +204,13 @@ class Dispatcher:
         if self._strategist_thread is not None and self._strategist_thread.is_alive():
             self._strategist_thread.join(timeout=join_timeout)
 
-        # Kill all running executor jobs to prevent orphans
-        if self.executor is not None:
-            try:
-                self.executor.cleanup_all()
-            except Exception as e:
-                logger.warning("Failed to cleanup GPU executor: %s", e)
-        if self.cpu_executor is not None:
-            try:
-                self.cpu_executor.cleanup_all()
-            except Exception as e:
-                logger.warning("Failed to cleanup CPU executor: %s", e)
-
+        # Executor teardown (killing orphaned jobs) is owned by RunDeps.close(), which
+        # fires when run.py exits the `with RunDeps(...)` block around this lifecycle.
         self._cleanup()
 
     def _cleanup(self) -> None:
         """Release all remaining worker assignments and close log file."""
-        for status in ("to_implement", "implemented", "finished"):
+        for status in ("to_implement", "implemented", "finished", "analyzed"):
             try:
                 assigned = self.db.list_by_status(status)
                 for exp in assigned:
@@ -254,15 +226,38 @@ class Dispatcher:
                 logger.warning("Failed to close dispatcher log file: %s", e)
             self._log_file = None
 
+    def _scan_existing_milestones(self) -> int:
+        """Return the highest N found among workspace/reports/milestone_NNN dirs, or 0."""
+        reports_dir = Path(self.workspace) / "reports"
+        # is_dir() covers "doesn't exist" and "exists but is a file" in one check; the
+        # try/except guards against permission errors or a TOCTOU race where the dir
+        # disappears between the is_dir check and iterdir.
+        if not reports_dir.is_dir():
+            return 0
+        max_n = 0
+        try:
+            for child in reports_dir.iterdir():
+                if not child.is_dir() or not child.name.startswith("milestone_"):
+                    continue
+                suffix = child.name[len("milestone_"):]
+                if suffix.isdigit():
+                    n = int(suffix)
+                    if n > max_n:
+                        max_n = n
+        except OSError as e:
+            logger.warning("Failed to scan milestone reports dir '%s': %s", reports_dir, e)
+            return 0
+        return max_n
+
     def recover(self) -> dict:
         """Recover from a crash: release orphaned workers and reconcile SLURM jobs.
 
         Returns a summary dict of recovery actions taken.
         """
-        summary: dict = {"released_workers": 0, "slurm_reconciled": 0}
+        summary: dict = {"released_workers": 0, "slurm_reconciled": 0, "report_counter": 0}
 
         # 1. Release orphaned worker assignments (no workers exist yet at startup)
-        for status in ("to_implement", "implemented", "finished"):
+        for status in ("to_implement", "implemented", "finished", "analyzed"):
             assigned = self.db.list_by_status(status)
             for exp in assigned:
                 if exp.worker_id is not None:
@@ -276,8 +271,8 @@ class Dispatcher:
         # 2. Reconcile SLURM jobs
         slurm_exps = self.db.list_by_status("queued", "running")
         job_ids = [exp.slurm_job_id for exp in slurm_exps if exp.slurm_job_id]
-        if job_ids and self.executor is not None:
-            statuses = self.executor.poll_jobs(job_ids)
+        if job_ids:
+            statuses = deps.get().gpu_executor.poll_jobs(job_ids)
             for exp in slurm_exps:
                 if not exp.slurm_job_id or exp.slurm_job_id not in statuses:
                     continue
@@ -306,6 +301,20 @@ class Dispatcher:
                     logger.info(f"Recovery: #{exp.id} {exp.status} -> finished (SLURM job lost)")
                     summary["slurm_reconciled"] += 1
 
+        # 3. Recover milestone-report counter from filesystem so a restart doesn't overwrite
+        #    milestone_001. Also align _last_report_at_done_count to current done_count so we
+        #    don't immediately fire a redundant report at resume.
+        max_milestone = self._scan_existing_milestones()
+        if max_milestone > 0:
+            self._report_number = max_milestone
+            self._current_report_number = max_milestone
+            self._last_report_at_done_count = len(self.db.list_by_status("done", "analyzed"))
+            summary["report_counter"] = max_milestone
+            logger.info(
+                f"Recovery: milestone counter restored to {max_milestone} "
+                f"(next report will be milestone_{max_milestone + 1:03d})"
+            )
+
         self._log("recovery", **summary)
         logger.info(f"Recovery complete: {summary}")
         return summary
@@ -326,78 +335,168 @@ class Dispatcher:
         # Ensure experiments directory exists
         Path(self.workspace, "experiments").mkdir(parents=True, exist_ok=True)
 
-        # Crash recovery before entering main loop
-        try:
-            self.recover()
-        except Exception as e:
-            logger.error(f"Recovery failed: {e}")
-            self._log("recovery_error", error=str(e))
+        with self._tracer.start_as_current_span(
+            "phase3.dispatcher",
+            kind=trace.SpanKind.INTERNAL,
+            attributes={
+                # alpha_lab.* prefix: custom namespace to avoid collision with
+                # future GenAI semconv additions (Decision #6).
+                "alpha_lab.dispatcher.max_experiments": self._max_experiments,
+                "alpha_lab.dispatcher.worker_count": len(self.workers),
+                "alpha_lab.dispatcher.convergence_metric": self._convergence_metric,
+                "alpha_lab.dispatcher.metric_direction": self._metric_direction,
+            },
+        ) as dispatcher_span:
+            # Crash recovery before entering main loop
+            try:
+                self.recover()
+            except Exception as e:
+                logger.error(f"Recovery failed: {e}")
+                self._log("recovery_error", error=str(e))
 
-        try:
-            while not self._stop_requested:
-                # 1. Strategist turn (if due)
-                if self._should_run_strategist():
-                    self._run_strategist()
+            try:
+                while not self._stop_requested:
+                    # 0. KILL_SIGNAL drain: cancel queued/running once, then
+                    #    only analyze remaining finished work to termination.
+                    if self._kill_signal_active():
+                        self._kill_signal_drain_in_flight()
 
-                # 2. Poll SLURM jobs
-                self._poll_slurm()
+                    # 1. Strategist turn (if due)
+                    if self._should_run_strategist():
+                        self._run_strategist()
 
-                # 3. Submit checked experiments to SLURM
-                self._submit_checked()
+                    # 2. Poll SLURM jobs
+                    self._poll_slurm()
 
-                # 4. Milestone report (if due) — checked BEFORE assigning
-                #    workers so a report can claim an idle slot.
-                self._maybe_generate_report()
+                    # 3. Submit checked experiments to SLURM
+                    self._submit_checked()
 
-                # 5. Assign idle workers
-                self._assign_workers()
+                    # 4. Milestone report (if due) — checked BEFORE assigning
+                    #    workers so a report can claim an idle slot.
+                    self._maybe_generate_report()
 
-                # 6. Track newly analyzed experiments (for strategist trigger)
-                self._track_analyzed()
+                    # 5. Assign idle workers
+                    self._assign_workers()
 
-                # 7. Detect stale workers
-                self._check_stale()
+                    # 6. Track newly analyzed experiments (for strategist trigger)
+                    self._track_analyzed()
 
-                # 7b. Detect stuck workers (observability)
-                self._check_stuck_workers()
+                    # 7. Detect stale workers
+                    self._check_stale()
 
-                # 7c. Supervisor health check (if error rate high)
-                self._maybe_supervisor_check()
+                    # 7b. Detect stuck workers (observability)
+                    self._check_stuck_workers()
 
-                # 8. Emit board summary
-                self._emit_board_summary()
+                    # 7c. Supervisor health check (if error rate high)
+                    self._maybe_supervisor_check()
 
-                # 9. Check termination
-                if self._should_terminate():
-                    logger.info("Max experiments reached, stopping")
-                    break
+                    # 8. Emit board summary
+                    self._emit_board_summary()
 
-                # Sleep (interruptible)
-                for _ in range(POLL_INTERVAL):
-                    if self._stop_requested:
+                    # 9. Check termination
+                    if self._should_terminate():
+                        logger.info("Max experiments reached, stopping")
                         break
-                    time.sleep(1)
 
-        except Exception as e:
-            logger.error(f"Dispatcher error: {e}")
-            self._log("dispatcher_error", error=str(e), traceback=traceback.format_exc())
-        finally:
-            self._log("dispatcher_stop")
-            self.emit(PhaseEvent(
-                phase="phase3",
-                step="dispatcher",
-                status="completed",
-                detail="Phase 3 experiment loop finished",
-            ))
-            if self._log_file is not None:
-                try:
-                    self._log_file.close()
-                except OSError as e:
-                    logger.warning("Failed to close dispatcher log on shutdown: %s", e)
-            logger.info("Dispatcher stopped")
+                    # Sleep (interruptible)
+                    for _ in range(POLL_INTERVAL):
+                        if self._stop_requested:
+                            break
+                        time.sleep(1)
+
+            except Exception as e:
+                # Swallow the exception so the CLI caller (run.py) doesn't need a
+                # wrapping try/except; the crash is still visible via the error
+                # PhaseEvent emitted in the finally block and via `self.crashed`,
+                # which tests and supervisors can inspect after run() returns.
+                dispatcher_span.set_status(trace.StatusCode.ERROR)
+                dispatcher_span.record_exception(e)
+                logger.error(f"Dispatcher error: {e}")
+                self._log("dispatcher_error", error=str(e), traceback=traceback.format_exc())
+                self._crashed = True
+            finally:
+                self._log("dispatcher_stop")
+                if getattr(self, "_crashed", False):
+                    status = "error"
+                    detail = "Phase 3 dispatcher crashed unexpectedly"
+                else:
+                    status = "completed"
+                    detail = "Phase 3 experiment loop finished"
+                self.emit(PhaseEvent(
+                    phase="phase3",
+                    step="dispatcher",
+                    status=status,
+                    detail=detail,
+                ))
+                if self._log_file is not None:
+                    try:
+                        self._log_file.close()
+                    except OSError as e:
+                        logger.warning("Failed to close dispatcher log on shutdown: %s", e)
+                logger.info("Dispatcher stopped")
+
+    def _kill_signal_active(self) -> bool:
+        """True when ``{workspace}/KILL_SIGNAL`` exists.
+
+        Existence-only sentinel written by benchmark objectives when their
+        evaluation budget is exhausted. Strict drain: queued and running
+        experiments are cancelled in-place (no further work performed);
+        only already-finished experiments may still be analyzed.
+        """
+        return (Path(self.workspace) / "KILL_SIGNAL").exists()
+
+    def _kill_signal_drain_in_flight(self) -> None:
+        """Cancel queued/running jobs once when KILL_SIGNAL is first observed.
+
+        Idempotent; ``_kill_signal_actioned`` gates re-entry. Sets each
+        affected experiment to ``cancelled`` so the subsequent poll path
+        cannot transition it to ``finished`` (which would otherwise make
+        it eligible for analyze).
+        """
+        if self._kill_signal_actioned:
+            return
+        d = deps.get()
+        for status in ("queued", "running"):
+            for exp in self.db.list_by_status(status):
+                job_id = exp.slurm_job_id
+                if job_id:
+                    executor = (
+                        d.cpu_executor
+                        if d.cpu_executor is not None and job_id in self._cpu_job_ids
+                        else d.gpu_executor
+                    )
+                    try:
+                        executor.cancel(job_id)
+                    except Exception as e:
+                        logger.warning("KILL_SIGNAL: cancel %s failed: %s", job_id, e)
+                self.db.update_status(exp.id, "cancelled")
+                logger.info("KILL_SIGNAL: cancelled experiment #%d (%s)", exp.id, exp.name)
+        self._kill_signal_actioned = True
 
     def _should_run_strategist(self) -> bool:
         """Determine if it's time for a strategist turn."""
+        if self._kill_signal_active():
+            return False
+
+        # JIT: capacity-driven trigger — fire when a slot is free or the interval
+        # elapsed (the old count/idle conditions are subsumed). Flag off leaves the
+        # original trigger below untouched, so existing behavior/tests are unchanged.
+        if deps.get().config.pipeline.phase3.jit:
+            with self._state_lock:
+                if self._strategist_running:
+                    return False
+            # Never wake the strategist when every worker is busy — there'd be no one to
+            # implement a new proposal, so it would only design stale work. (The strategist
+            # is not itself a worker.)
+            if utils.worker_states(self.db)["free"] <= 0:
+                return False
+            with self._state_lock:
+                if self._last_strategist_time == 0:
+                    return True
+                if time.time() - self._last_strategist_time >= self._strategist_interval:
+                    return True
+            return any(s["free"] > 0 for s in utils.slot_states(self.db).values())
+
         with self._state_lock:
             if self._strategist_running:
                 return False
@@ -436,7 +535,7 @@ class Dispatcher:
         with self._state_lock:
             self._strategist_running = True
 
-        if self.config.pipeline.phase3.no_strategist:
+        if deps.get().config.pipeline.phase3.no_strategist:
             self._log("random_proposer_start")
             self.emit(ExperimentEvent(
                 name="random_proposer",
@@ -444,7 +543,10 @@ class Dispatcher:
                 detail="Random proposer generating experiments (no strategist)",
             ))
 
+            ctx = copy_context()
+
             def _random_proposer_thread() -> None:
+                token = attach_context(ctx)
                 try:
                     self._propose_random_experiments()
                     with self._state_lock:
@@ -456,6 +558,7 @@ class Dispatcher:
                     self._log("random_proposer_error", error=str(e),
                               traceback=traceback.format_exc())
                 finally:
+                    detach_context(token)
                     with self._state_lock:
                         self._strategist_running = False
 
@@ -471,17 +574,28 @@ class Dispatcher:
             detail="Strategist proposing experiments",
         ))
 
+        ctx = copy_context()
+
         def _strategist_thread() -> None:
+            token = attach_context(ctx)
             try:
                 self.strategist.run_turn()
                 with self._state_lock:
                     self._last_strategist_time = time.time()
                     self._analyzed_since_strategist = 0
                 self._log("strategist_done")
+            except StallError as e:
+                # Idle board + free capacity + no proposal ⇒ no progress possible.
+                # Fail the whole run loudly instead of spinning.
+                logger.error(f"Strategist stall: {e}")
+                self._log("jit_stall", error=str(e))
+                self._crashed = True
+                self._stop_requested = True
             except Exception as e:
                 logger.error(f"Strategist error: {e}")
                 self._log("strategist_error", error=str(e), traceback=traceback.format_exc())
             finally:
+                detach_context(token)
                 with self._state_lock:
                     self._strategist_running = False
 
@@ -558,12 +672,22 @@ Return a JSON array of objects, each with:
 Return ONLY the JSON array. No explanation."""
 
         import re as _re
-        response = self.provider.complete(
-            model=self.config.model,
-            system="Return only valid JSON.",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=8000,
-        )
+        model = deps.get().config.model
+        with self._tracer.start_as_current_span(
+            f"chat {model}",
+            kind=trace.SpanKind.CLIENT,
+            attributes={
+                GEN_AI_OPERATION_NAME: GenAiOperationNameValues.CHAT.value,
+                GEN_AI_REQUEST_MODEL: model,
+                GEN_AI_SYSTEM: self._gen_ai_system,
+            },
+        ):
+            response = self.provider.complete(
+                model=model,
+                system="Return only valid JSON.",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=8000,
+            )
 
         # Parse response
         text = response.strip()
@@ -594,6 +718,11 @@ Return ONLY the JSON array. No explanation."""
 
     def _poll_slurm(self) -> None:
         """Poll GPU and CPU executors for job status updates."""
+        # Under KILL_SIGNAL, queued/running have been cancelled in-place;
+        # polling would race the cancellation by flipping them back to
+        # ``finished`` via ``set_error_and_finish``.
+        if self._kill_signal_active():
+            return
         # Get all queued/running experiments with job IDs
         active = self.db.list_by_status("queued", "running")
         job_ids = [exp.slurm_job_id for exp in active if exp.slurm_job_id]
@@ -605,11 +734,12 @@ Return ONLY the JSON array. No explanation."""
         gpu_job_ids = [jid for jid in job_ids if jid not in self._cpu_job_ids]
 
         # Poll both executors
+        d = deps.get()
         statuses: dict[str, str] = {}
-        if gpu_job_ids and self.executor is not None:
-            statuses.update(self.executor.poll_jobs(gpu_job_ids))
-        if cpu_job_ids and self.cpu_executor:
-            statuses.update(self.cpu_executor.poll_jobs(cpu_job_ids))
+        if gpu_job_ids:
+            statuses.update(d.gpu_executor.poll_jobs(gpu_job_ids))
+        if cpu_job_ids and d.cpu_executor:
+            statuses.update(d.cpu_executor.poll_jobs(cpu_job_ids))
 
         for exp in active:
             if not exp.slurm_job_id or exp.slurm_job_id not in statuses:
@@ -664,61 +794,140 @@ Return ONLY the JSON array. No explanation."""
                 )
 
     def _is_cpu_experiment(self, exp: Experiment) -> bool:
-        """Check if an experiment should run on CPU based on its config."""
+        """Check if an experiment should run on CPU.
+
+        Priority:
+        1. Explicit resource tag in config ("cpu"/"gpu") — always honored.
+        2. Source code scan — read the adapter-declared source files for this
+           experiment (``adapter.experiment.required_files`` plus
+           ``entry_point``, falling back to ``strategy.py`` + ``run_experiment.py``
+           only if the adapter declares neither) and search them for GPU
+           markers such as ``torch.cuda``, ``.cuda()``, ``torch.device``,
+           etc. If any declared file references a GPU marker, route to GPU.
+           If a file exists but is unreadable (OSError / UnicodeDecodeError)
+           we conservatively route to GPU rather than risk a false-negative
+           CPU routing.
+        """
         try:
             config = json.loads(exp.config_json or "{}")
-            model_type = config.get("model_type", "").lower()
-            resource = config.get("resource", "").lower()
+            resource = ""
+            if isinstance(config, dict):
+                raw_resource = config.get("resource", "")
+                # Callers have been known to set resource to non-string values
+                # (null, numeric tag, etc.); only a str is usable here, and
+                # anything else falls through to the source-scan heuristic.
+                if isinstance(raw_resource, str):
+                    resource = raw_resource.lower()
 
             # Explicit resource tag takes precedence
             if resource == "cpu":
                 return True
             if resource == "gpu":
                 return False
-
-            # Infer from model type
-            cpu_keywords = [
-                "xgboost", "lightgbm", "gbdt", "gradient_boost",
-                "random_forest", "decision_tree", "tree",
-                "linear", "lasso", "ridge", "elastic",
-                "catboost", "sklearn",
-            ]
-            return any(kw in model_type for kw in cpu_keywords)
         except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Scan experiment source files for GPU usage indicators. Explicit
+        # UTF-8 + UnicodeDecodeError catch: the dispatcher loop must survive
+        # a single odd-encoded source file instead of tearing the pipeline
+        # down on a decode error. If a source file exists but can't be read,
+        # we conservatively treat it as "unknown" and default to GPU — routing
+        # an unreadable file to CPU risks silently running a GPU experiment on
+        # CPU, which would crash at runtime.
+        exp_dir = Path(self.workspace) / "experiments" / exp.name
+        gpu_markers = {"torch.device", ".cuda()", "CUDA", "torch.cuda", ".to(device",
+                       ".to(self.device", "gpu_id", "accelerator"}
+        # Adapters vary in required filenames (time_series: strategy.py,
+        # cuda_kernel: kernel.cu, nanogpt: run_training.py + train_config.py,
+        # llm_speedrun: train.py). We scan the adapter-declared files
+        # (``required_files`` + ``entry_point``) so non-time_series adapters
+        # aren't silently misrouted to CPU. If the adapter declares neither,
+        # we fall back to the legacy ``strategy.py`` + ``run_experiment.py``
+        # pair. We deliberately do NOT glob every ``.py`` in the experiment
+        # dir — experiments can contain helper modules the adapter doesn't
+        # declare, and scanning those could flip routing unexpectedly.
+        candidate_files: list[Path] = []
+        if self.adapter is not None:
+            required = getattr(self.adapter.experiment, "required_files", None) or []
+            entry = getattr(self.adapter.experiment, "entry_point", None)
+            for name in list(required) + ([entry] if entry else []):
+                p = exp_dir / name
+                if p not in candidate_files:
+                    candidate_files.append(p)
+        if not candidate_files:
+            for name in ("strategy.py", "run_experiment.py"):
+                candidate_files.append(exp_dir / name)
+        any_unreadable = False
+        any_scanned = False
+        for src_path in candidate_files:
+            if src_path.exists():
+                try:
+                    source = src_path.read_text(encoding="utf-8")
+                    any_scanned = True
+                    if any(marker in source for marker in gpu_markers):
+                        return False  # Code references GPU — run on GPU
+                except (OSError, UnicodeDecodeError):
+                    any_unreadable = True
+
+        if any_unreadable or not any_scanned:
+            # Unknown — default to GPU to avoid false-negative CPU routing.
+            # `not any_scanned` covers the case where every declared source
+            # file is missing (experiment not materialized, adapter declares
+            # non-existent files, wrong exp_dir, etc.); routing those to CPU
+            # would contradict the "safe default = GPU" invariant used
+            # elsewhere in the dispatcher.
             return False
+
+        # No GPU references found in any scanned source — run on CPU
+        return True
 
     def _submit_checked(self) -> None:
         """Submit checked experiments to GPU or CPU executor."""
+        if self._kill_signal_active():
+            return
+        d = deps.get()
         checked = self.db.list_by_status("checked")
         for exp in checked:
             if self._stop_requested:
                 break
 
-            # Determine which executor to use
-            # CPU-only mode: route everything to CPU when no GPU executor
-            use_cpu = (
-                self.executor is None
-                or (self.cpu_executor is not None and self._is_cpu_experiment(exp))
-            )
+            # When no GPUs are configured, bypass the source scan and
+            # send everything to the CPU executor. Experiments that truly
+            # need a GPU will fail at runtime instead of stalling forever.
+            has_gpus = bool(getattr(d.gpu_executor, "gpu_ids", True))
 
-            if use_cpu and self.cpu_executor is not None:
-                if not self.cpu_executor.can_submit():
+            if not has_gpus and d.cpu_executor is not None:
+                use_cpu = True
+            elif d.cpu_executor is not None and self._is_cpu_experiment(exp):
+                use_cpu = True
+            else:
+                use_cpu = False
+
+            if use_cpu:
+                if not d.cpu_executor.can_submit(exp):
                     logger.debug(f"CPU slots full, skipping {exp.name}")
                     continue
-                executor = self.cpu_executor
+                executor = d.cpu_executor
                 executor_name = "CPU"
-            elif self.executor is not None:
-                if not self.executor.can_submit():
+            else:
+                if not d.gpu_executor.can_submit(exp):
                     logger.debug("GPU budget exhausted, waiting")
                     continue
-                executor = self.executor
+                executor = d.gpu_executor
                 executor_name = "GPU"
-            else:
-                logger.warning(f"No executor available for {exp.name}, skipping")
-                continue
 
             try:
-                job_id = executor.submit_experiment(exp, self.workspace)
+                with self._tracer.start_as_current_span(
+                    f"submit_experiment {exp.name}",
+                    kind=trace.SpanKind.INTERNAL,
+                    attributes={
+                        "alpha_lab.experiment.id": exp.id,
+                        "alpha_lab.experiment.name": exp.name,
+                        "alpha_lab.experiment.executor": executor_name,
+                    },
+                ) as submit_span:
+                    job_id = executor.submit_experiment(exp, self.workspace)
+                    submit_span.set_attribute("alpha_lab.experiment.job_id", job_id)
                 if use_cpu:
                     self._cpu_job_ids.add(job_id)
                 self.db.set_slurm_job(exp.id, job_id)
@@ -737,7 +946,7 @@ Return ONLY the JSON array. No explanation."""
                 self.db.set_error_and_finish(exp.id, f"Submit failed: {e}")
 
     def _assign_workers(self) -> None:
-        """Assign idle workers to pending tasks. Priority: fix > analyze > implement."""
+        """Assign idle workers to pending tasks."""
         # First: release experiments assigned to workers that are no longer busy
         self._release_dead_assignments()
 
@@ -745,10 +954,34 @@ Return ONLY the JSON array. No explanation."""
         if not idle:
             return
 
-        # Priority 1: fix failed experiments (finished with error, no results, < max attempts)
+        kill = self._kill_signal_active()
+
+        # Close out analyzed experiments first when handoff is enabled.
+        # KILL_SIGNAL drains existing evaluator work without starting handoff.
+        handoff_enabled = not deps.get().config.pipeline.phase3.no_handoff
+        analyzed_rows = (
+            [] if kill or not handoff_enabled
+            else self.db.list_by_status("analyzed")
+        )
+        unassigned_handoff = [exp for exp in analyzed_rows if exp.worker_id is None]
+
+        for exp in unassigned_handoff:
+            if not idle:
+                break
+            worker = idle.pop(0)
+            logger.info(
+                f"Assigning {worker.worker_id} to handoff #{exp.id} {exp.name}"
+            )
+            self._log("assign_worker", worker=worker.worker_id, task="handoff",
+                       experiment_id=exp.id, experiment_name=exp.name)
+            worker.handoff(exp, otel_context=copy_context())
+
+        # Fix failed experiments (finished with error, no results, < max attempts).
+        # Skipped while draining under KILL_SIGNAL: fixes recycle work back through
+        # checked -> queued -> running, which the sentinel is meant to halt.
         MAX_FIX_ATTEMPTS = 2
         finished = self.db.list_by_status("finished")
-        fixable = [
+        fixable = [] if kill else [
             exp for exp in finished
             if exp.worker_id is None
             and exp.error
@@ -769,9 +1002,9 @@ Return ONLY the JSON array. No explanation."""
             self._log("assign_worker", worker=worker.worker_id, task="fix",
                        experiment_id=exp.id, experiment_name=exp.name,
                        fix_attempt=attempts)
-            worker.fix(exp)
+            worker.fix(exp, otel_context=copy_context())
 
-        # Priority 2: analyze finished experiments (with results or max fix attempts reached)
+        # Analyze finished experiments (with results or max fix attempts reached).
         unassigned_finished = [
             exp for exp in finished
             if exp.worker_id is None and exp not in fixable
@@ -786,10 +1019,11 @@ Return ONLY the JSON array. No explanation."""
             )
             self._log("assign_worker", worker=worker.worker_id, task="analyze",
                        experiment_id=exp.id, experiment_name=exp.name)
-            worker.analyze(exp)
+            worker.analyze(exp, otel_context=copy_context())
 
-        # Priority 3: implement new experiments (include "implemented" stuck experiments)
-        to_implement = self.db.list_by_status("to_implement", "implemented")
+        # Implement new experiments (include "implemented" stuck experiments).
+        # Skipped while draining under KILL_SIGNAL: no new evaluations are wanted.
+        to_implement = [] if kill else self.db.list_by_status("to_implement", "implemented")
         unassigned_impl = [
             exp for exp in to_implement if exp.worker_id is None
         ]
@@ -803,7 +1037,7 @@ Return ONLY the JSON array. No explanation."""
             )
             self._log("assign_worker", worker=worker.worker_id, task="implement",
                        experiment_id=exp.id, experiment_name=exp.name)
-            worker.implement(exp)
+            worker.implement(exp, otel_context=copy_context())
 
     def _release_dead_assignments(self) -> None:
         """Release experiments assigned to workers that are no longer busy.
@@ -820,7 +1054,7 @@ Return ONLY the JSON array. No explanation."""
         now = time.time()
 
         # Check experiments in states where workers should be active
-        for status in ("to_implement", "implemented", "finished"):
+        for status in ("to_implement", "implemented", "finished", "analyzed"):
             assigned = self.db.list_by_status(status)
             for exp in assigned:
                 if exp.worker_id and exp.worker_id not in busy_worker_ids:
@@ -897,8 +1131,6 @@ Return ONLY the JSON array. No explanation."""
 
         try:
             self.supervisor.phase3_health_check()
-            # Reload adapter in case supervisor patched it
-            from alpha_lab.adapter_loader import resolve_adapter
             new_adapter = resolve_adapter(self.workspace)
             self.adapter = new_adapter
             # Update workers and strategist
@@ -914,7 +1146,7 @@ Return ONLY the JSON array. No explanation."""
         summary = self.db.board_summary()
         recent = self.db.list_all()[-10:]
         _metric = self._convergence_metric
-        leaders = self.db.leaderboard(_metric, 5)
+        leaders = self.db.leaderboard(_metric, 5, self._metric_direction)
 
         experiments = []
         for exp in recent:
@@ -931,7 +1163,9 @@ Return ONLY the JSON array. No explanation."""
             metrics = {}
             if exp.results_json:
                 try:
-                    metrics = json.loads(exp.results_json)
+                    parsed = json.loads(exp.results_json)
+                    if isinstance(parsed, dict):
+                        metrics = parsed
                 except (json.JSONDecodeError, TypeError):
                     pass
             leaderboard.append({
@@ -994,7 +1228,7 @@ Return ONLY the JSON array. No explanation."""
             # Ensure reports directory exists
             Path(self.workspace, "reports").mkdir(parents=True, exist_ok=True)
 
-            worker.generate_report(self._report_number, done_count)
+            worker.generate_report(self._report_number, done_count, otel_context=copy_context())
             self._last_report_at_done_count = done_count
             self._report_in_progress = True
             self._report_worker = worker
@@ -1014,10 +1248,12 @@ Return ONLY the JSON array. No explanation."""
             self._last_analyzed_count = current_analyzed
 
             # Check for improvement in best metric
-            leaders = self.db.leaderboard(self._convergence_metric, 1)
+            leaders = self.db.leaderboard(self._convergence_metric, 1, self._metric_direction)
             if leaders:
                 try:
                     metrics = json.loads(leaders[0].results_json or "{}")
+                    if not isinstance(metrics, dict):
+                        metrics = {}
                     default_val = float("inf") if self._metric_direction == "minimize" else float("-inf")
                     current_best = float(metrics.get(self._convergence_metric, default_val))
                     # For maximize: improvement = current > best
@@ -1057,7 +1293,13 @@ Return ONLY the JSON array. No explanation."""
         return False
 
     def _should_terminate(self) -> bool:
-        """Check if we should stop: max_experiments fully completed (analyzed+done)."""
+        """Check if max_experiments is reached and no in-flight work remains.
+
+        Under KILL_SIGNAL the run drains as soon as nothing remains in
+        ``queued`` / ``running`` / ``finished``; ``to_implement``,
+        ``implemented``, and ``checked`` work is intentionally stranded
+        because the sentinel blocked further progress on those columns.
+        """
         done = self.db.list_by_status("analyzed", "done")
 
         # Convergence is logged for observability but does not terminate the run.
@@ -1065,13 +1307,26 @@ Return ONLY the JSON array. No explanation."""
         # comparisons use the same number of real experiments.
         self._check_convergence()  # logs convergence state; result intentionally ignored
 
-        # Stop only when max_experiments have been fully completed
+        if self._kill_signal_active():
+            # Queued/running have already been cancelled in-place.
+            # Only ``finished`` work (already produced metrics) may still
+            # be analyzed; terminate once that bucket drains.
+            draining = self.db.list_by_status("finished")
+            return not draining
+
+        # Stop only when max_experiments have reached a terminal-or-near-terminal
+        # state. With handoff enabled, ``analyzed`` remains in-flight below.
         if len(done) < self._max_experiments:
             return False
-        # Don't terminate while experiments are still in progress
-        in_flight = self.db.list_by_status(
-            "to_implement", "implemented", "checked", "queued", "running", "finished"
-        )
+        # Don't terminate while experiments are still in progress.
+        # ``analyzed`` is in-flight only when the handoff stage is enabled
+        # (otherwise it's a terminal state from the dispatcher's POV).
+        in_flight_states = [
+            "to_implement", "implemented", "checked", "queued", "running", "finished",
+        ]
+        if not deps.get().config.pipeline.phase3.no_handoff:
+            in_flight_states.append("analyzed")
+        in_flight = self.db.list_by_status(*in_flight_states)
         if in_flight:
             return False
         return True

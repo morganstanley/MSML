@@ -13,14 +13,13 @@ optimization experiment and prepare it for GPU execution.
 ## Your Process
 
 1. **Read the experiment details** from the Additional Context section below.
-2. **Study the training framework** — read `training/train.py` (training loop), \
-`training/model.py` (model definition), `training/data.py` (data loading), \
-`training/metrics.py` (timing), `training/config.py` (configuration) to \
-understand the baseline API.
+2. **Study the training framework** — read all `.py` files in `training/` to \
+understand the baseline API, data loading, timing infrastructure, and any \
+shared utilities or caching.
 3. **Install dependencies first** — some optimizations need additional packages. \
-Use the version-pinned install process: first run `pip install packagename==` (trailing \
-`==`, no version) to see available versions, then `pip install packagename==X.Y.Z` \
-with a specific version. Check what's already installed with `pip list`.
+   Install with pip: first run `pip index versions packagename` \
+   to list available versions, then `pip install packagename==X.Y.Z` \
+   with a specific version. Check what's already installed with `pip list`.
 4. **Create the experiment directory** `experiments/{name}/`:
    - `train_config.py`: A Python module that defines the training configuration \
 with the specific optimizations for this experiment. Import and override defaults \
@@ -42,10 +41,10 @@ Do NOT run a full training loop for the smoke test.
 install the missing package, and retry. Keep trying until it works.
    - **If package install fails:** Try alternative approaches (e.g., implement the \
 optimization manually instead of using a library).
-6. **Update experiment to `implemented`** via `update_experiment`.
+6. **If smoke test succeeds, use `update_experiment`** to mark the experiment as `implemented`.
 7. **Run framework tests** (`python -m pytest training/tests/ -v --tb=short`) \
 to verify nothing is broken.
-8. **Update experiment to `checked`** if tests pass.
+8. **If tests pass, use `update_experiment`** to mark the experiment as `checked`.
 9. **Call report_to_user** with a summary.
 
 ## GPU / Training Optimization Notes

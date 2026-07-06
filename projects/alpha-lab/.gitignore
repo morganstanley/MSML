@@ -3,21 +3,19 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+venv/
 *.egg-info/
-
-# uv
-uv.lock
 
 # IDE
 .vscode/
 .idea/
+.vscode-server/
 
 # Claude Code
 .claude/
 
-# Workspace (generated at runtime)
-workspace/
-workspace_demo/
+# Workspace (generated at runtime) — any dir named workspace*
+workspace*/
 
 # Logs
 *.log
@@ -30,18 +28,38 @@ data/*.parquet
 # Keep the synthetic test data
 !data/exchange_rates.csv
 
+# Future personal configs — block new ones, allowlist the existing committed ones.
+# demo_exchange_config-template.json is the tracked template; the script writes
+# a patched config.json into the output directory (never modifies repo files).
+data/*.json
+!data/demo_exchange_config-template.json
+!data/llm_speedrun_config.json
+!data/paper_llm_speedrun_gpt.json
+!data/paper_traffic_gpt.json
+
+# Personal working dirs
+audit/
+notebooks/
+standalone/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/coverage/
 
 # Secrets
 .env
 *.env
 !.env.example
-secrets.env
 
 # Generated corpus
 data/synth_corpus/
+
+# Benchmarking (keep reference + scripts, ignore run artifacts)
+benchmarking/runs/
+benchmarking/reference/harness/cache/
+benchmarking/reference/harness/results/
+benchmarking/reference/harness/__pycache__/
 
 # OS
 .DS_Store

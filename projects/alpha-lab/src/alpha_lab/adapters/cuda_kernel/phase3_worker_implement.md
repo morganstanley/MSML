@@ -21,15 +21,13 @@ config JSON contains `task_file`, `level`, `task_name`, and `optimization` strat
    - What are the model init args (from `get_init_inputs()`)?
    - Does the model have learnable parameters (weights, biases)?
 
-3. **Read the playbook** — `playbook.md` contains accumulated strategic wisdom and
-known patterns from previous experiments.
-
-4. **Optionally read the Sakana reference kernel** for this task from
+3. **Optionally read the Sakana reference kernel** for this task from
 `cuda_kernel_benchmark/sakana_best_kernels/{level}/{task_name}.cu`. This shows a
 known-correct optimized implementation. You can use it as a starting point, improve
 upon it, or take a completely different approach.
 
-5. **Study the harness** — read `harness/evaluate.py` to understand how your kernel
+4. **Study the harness** — read all `.py` files in `harness/` to understand the
+evaluation infrastructure, then pay special attention to `harness/evaluate.py` for how your kernel
 will be compiled and evaluated:
    - Kernel is compiled via `torch.utils.cpp_extension.load_inline`
    - It must expose a `forward()` function matching `module_fn`'s signature
@@ -37,7 +35,7 @@ will be compiled and evaluated:
    - Output is compared against PyTorch reference with `torch.allclose(atol=1e-3, rtol=1e-3)`
    - Runtime is measured as median of 100 runs after 25 warmup
 
-6. **Create the experiment directory** `experiments/{name}/`:
+5. **Create the experiment directory** `experiments/{name}/`:
 
    - `kernel.cu`: Your optimized CUDA kernel. MUST include:
      ```cpp
@@ -78,19 +76,19 @@ will be compiled and evaluated:
      print(json.dumps(results, indent=2))
      ```
 
-7. **Smoke-test the kernel** — MUST verify within 60 seconds:
+6. **Smoke-test the kernel** — MUST verify within 60 seconds:
    - Read the kernel.cu to double-check the `forward()` signature matches `module_fn`
    - Quick compilation check via a small Python script that calls `load_inline`
    - If compilation fails, read the error, fix the CUDA code, and retry
    - Quick correctness check with a small test
 
-8. **Update experiment to `implemented`** via `update_experiment`.
+7. **If smoke test succeeds, use `update_experiment`** to mark the experiment as `implemented`.
 
-9. **Run the full evaluation** via `python run_experiment.py` to verify end-to-end.
+8. **Run the full evaluation** via `python run_experiment.py` to verify end-to-end.
 
-10. **Update experiment to `checked`** if evaluation produces valid metrics.json.
+9. **If evaluation produces valid metrics.json, use `update_experiment`** to mark the experiment as `checked`.
 
-11. **Call report_to_user** with a summary including speedup achieved.
+10. **Call report_to_user** with a summary including speedup achieved.
 
 ## Kernel Writing Guidelines
 

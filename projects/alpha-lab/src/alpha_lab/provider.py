@@ -1,7 +1,7 @@
 """Provider protocol and normalized types for alpha-lab.
 
-Defines a common interface that both OpenAI and Anthropic providers implement,
-plus the normalized dataclasses they produce.
+Defines a common interface that LLM providers implement, plus the
+normalized dataclasses they produce.
 """
 
 from __future__ import annotations
@@ -49,6 +49,8 @@ class Response:
     has_web_search: bool
     input_tokens: int
     output_tokens: int
+    cache_read_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
     raw_output_items: list[dict[str, Any]] = field(default_factory=list)
     """Provider-native format items for history tracking."""
 
@@ -60,7 +62,7 @@ class Response:
 
 @runtime_checkable
 class Provider(Protocol):
-    """Abstract interface for LLM providers (OpenAI, Anthropic, etc.)."""
+    """Abstract interface for LLM providers."""
 
     def stream_response(
         self,
@@ -76,7 +78,7 @@ class Provider(Protocol):
         Parameters
         ----------
         model : str
-            Model identifier (e.g. "gpt-5.2" or "us.anthropic.claude-sonnet-4-20250514").
+            Model identifier (e.g. "gpt-5.2").
         system : str
             System instructions / prompt.
         history : list[dict]

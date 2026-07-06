@@ -14,7 +14,7 @@ harness in `harness/`.
 ## CRITICAL RULES
 
 1. **READ CONTEXT FIRST.** Start by reading `learnings.md` to understand the benchmark
-structure, task interface, and evaluation methodology.
+structure, task interface, and evaluation methodology. Also read `{workspace}/agenda.md` if present — the harness you build should support the user's stated success criteria and respect any out-of-scope items.
 
 2. **DO NOT STOP.** Chain tool calls until every component is built and tested.
 

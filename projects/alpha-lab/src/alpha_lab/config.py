@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 # Try yaml, fall back to json-only
+yaml = None
 try:
     import yaml
     YAML_AVAILABLE = True
@@ -30,12 +31,12 @@ class Phase3Config:
 
     # SLURM settings (used when executor="slurm")
     max_concurrent_gpus: int = 8
-    slurm_partitions: list[str] = field(default_factory=lambda: ["gpu"])
+    slurm_partitions: list[str] = field(default_factory=lambda: ["hpc-mid"])
     gpu_per_job: int = 1
     slurm_time_limit: str = "02:00:00"
 
     # Local GPU settings (used when executor="local")
-    gpu_ids: list[int] = field(default_factory=lambda: [0, 1, 2, 3])
+    gpu_ids: list[int] | str = "auto"  # "auto" = detect, [] = CPU-only
     max_per_gpu: int = 1  # experiments per GPU (increase for packing)
     time_limit_seconds: int = 7200  # 2 hours default
 
@@ -48,7 +49,24 @@ class Phase3Config:
     # Falls back to ALPHALAB_PYTHON env var, then sys.executable
     python_executable: str = ""
 
+    # When False, the dispatcher assigns a user-proxy handoff turn to each
+    # ``analyzed`` experiment (closes out the lifecycle with directional
+    # feedback at ``{workspace}/agenda.md``). Default off pending A/B results.
+    no_handoff: bool = True
+
     def __post_init__(self) -> None:
+        if isinstance(self.gpu_ids, str) and self.gpu_ids != "auto":
+            raise ValueError(
+                f"gpu_ids must be 'auto' or a list of int GPU indices, "
+                f"got {self.gpu_ids!r}"
+            )
+        if isinstance(self.gpu_ids, list) and not all(
+            isinstance(i, int) and not isinstance(i, bool) for i in self.gpu_ids
+        ):
+            raise ValueError(
+                f"gpu_ids list must contain only int GPU indices, "
+                f"got {self.gpu_ids!r}"
+            )
         if not self.python_executable:
             self.python_executable = os.environ.get("ALPHALAB_PYTHON", "")
 
@@ -60,6 +78,10 @@ class Phase3Config:
     no_strategist: bool = False  # Replace strategist with random experiment proposals
     no_playbook: bool = False  # Disable playbook accumulation
 
+    # JIT (just-in-time) proposals: make the strategist resource-aware — gate proposals
+    # against free slots, capacity-driven trigger, fail-loud when idle. Off = batch behavior.
+    jit: bool = False
+
 
 @dataclass
 class PipelineConfig:
@@ -68,6 +90,16 @@ class PipelineConfig:
     phases: list[str] = field(default_factory=lambda: ["phase1"])
     max_fix_iterations: int = 3
     phase3: Phase3Config = field(default_factory=Phase3Config)
+
+    def __post_init__(self) -> None:
+        """Coerce ``phase3`` from dict to :class:`Phase3Config`."""
+        if isinstance(self.phase3, dict):
+            self.phase3 = Phase3Config(**self.phase3)
+        elif not isinstance(self.phase3, Phase3Config):
+            raise TypeError(
+                f"phase3 must be a dict or Phase3Config, got "
+                f"{type(self.phase3).__name__}"
+            )
 
 
 @dataclass
@@ -79,9 +111,60 @@ class TaskConfig:
     target: str = ""
     reasoning_effort: str = "low"
     model: str = "gpt-5.2"
-    provider: str = "openai"  # "openai" or "anthropic"
-    domain: str = ""  # "time_series", "cuda_kernel", "nanogpt", or free-text for Phase 0
+    provider: str = "openai"  # currently only "openai" is supported
+    domain: str | None = None
+    """Adapter name (e.g. ``"tabular_regression"``) or absolute path to an
+    adapter dir. ``None`` triggers the Phase 0 generation agent. Empty
+    string is rejected as ambiguous."""
+    workspace_includes: list[str] = field(default_factory=list)
+    """Workspace-relative directory or file names (e.g. ``["private"]``)
+    that the generator's ``bootstrap`` method and ``copy_workspace``
+    must carry over alongside ``data/``. Entries must be plain relative
+    names (no absolute paths or ``..`` traversal). Each entry must exist
+    in the source workspace at bootstrap time, else bootstrap raises."""
+    shell_timeout: int = 300  # seconds for shell_exec commands (agent can request less)
+    tool_output_max_chars: int = 8000  # per-tool-result char cap applied in the agent loop
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.domain, str) and self.domain == "":
+            raise ValueError(
+                "domain must be a non-empty adapter name/path or None "
+                "(empty string is ambiguous; use None to trigger generation)."
+            )
+        for entry in self.workspace_includes:
+            if not isinstance(entry, str) or not entry:
+                raise ValueError(
+                    f"workspace_includes entries must be non-empty strings, "
+                    f"got {entry!r}"
+                )
+            p = Path(entry)
+            if p.is_absolute() or ".." in p.parts:
+                raise ValueError(
+                    f"workspace_includes entries must be plain relative "
+                    f"paths (no absolute paths or '..'), got {entry!r}"
+                )
+        # tool_output_max_chars is user-settable via top-level config.json; reject
+        # values that would make compact_tool_output silently misbehave. bool is a
+        # subclass of int in Python, so exclude it explicitly.
+        v = self.tool_output_max_chars
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError(
+                f"tool_output_max_chars must be an int, got "
+                f"{type(v).__name__}={v!r}"
+            )
+        if v < 100:
+            raise ValueError(
+                f"tool_output_max_chars must be >= 100 so head+tail slicing "
+                f"leaves room for content, got {v}"
+            )
+        if isinstance(self.pipeline, dict):
+            self.pipeline = PipelineConfig(**self.pipeline)
+        elif not isinstance(self.pipeline, PipelineConfig):
+            raise TypeError(
+                f"pipeline must be a dict or PipelineConfig, got "
+                f"{type(self.pipeline).__name__}"
+            )
 
     def resolve_data_path(self, base_dir: str | Path) -> str:
         """Resolve data_path relative to base_dir if not absolute."""
@@ -95,7 +178,10 @@ def load_config(path: str | Path) -> TaskConfig:
     """Load a TaskConfig from a YAML or JSON file.
 
     Required fields: data_path, description.
-    Optional: target, reasoning_effort, model.
+    Optional: target, reasoning_effort, model, provider, domain,
+    shell_timeout (seconds; max wall-clock for shell_exec commands),
+    tool_output_max_chars (per-tool-result char cap in agent loop; default 8000),
+    pipeline (nested PipelineConfig/Phase3Config).
     """
     path = Path(path)
     if not path.exists():
@@ -117,6 +203,16 @@ def load_config(path: str | Path) -> TaskConfig:
     if not isinstance(raw, dict):
         raise ValueError(f"Config file must be a mapping, got {type(raw).__name__}")
 
+    return task_config_from_mapping(raw)
+
+
+def task_config_from_mapping(raw: dict[str, Any]) -> TaskConfig:
+    """Build a TaskConfig from an already-parsed mapping.
+
+    Shared by :func:`load_config` (file path) and callers that carry a serialized
+    config (e.g. ``dataclasses.asdict(config)`` sent to a sandboxed agent), so the
+    nested-pipeline coercion and field filtering live in one place.
+    """
     # Validate required fields
     for key in ("data_path", "description"):
         if key not in raw:
@@ -147,3 +243,11 @@ def load_config(path: str | Path) -> TaskConfig:
     filtered = {k: v for k, v in cleaned.items() if k in known_fields}
 
     return TaskConfig(**filtered)
+
+
+def split_frontmatter_from_config_body(text: str) -> tuple[str, str]:
+    if not text.startswith("---\n"):
+        raise ValueError("missing YAML frontmatter opening")
+    if (end := text.find("\n---\n", 4)) == -1:
+        raise ValueError("missing YAML frontmatter closing")
+    return text[4:end], text[end + len("\n---\n") :]

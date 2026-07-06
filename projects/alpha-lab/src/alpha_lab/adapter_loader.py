@@ -1,7 +1,7 @@
 """Load, save, and resolve domain adapters for alpha-lab.
 
 An adapter is a directory containing:
-  - manifest.json — MetricConfig, ExperimentStructure, metadata
+  - manifest.json -- MetricConfig, ExperimentStructure, metadata
   - 9 prompt .md files (one per PROMPT_REGISTRY key)
   - domain_knowledge.md (optional)
 """
@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -24,19 +25,28 @@ from alpha_lab.adapter import (
 
 logger = logging.getLogger("alpha_lab.adapter_loader")
 
-# Built-in adapters live alongside this module
-_BUILTINS_DIR = Path(__file__).parent / "adapters"
 
-# Known built-in adapter names
-BUILTIN_ADAPTERS = ["time_series", "cuda_kernel", "nanogpt", "llm_speedrun"]
+def _resolve_adapter_path(name_or_path: str) -> Path:
+    """Resolve an adapter name or absolute path to a directory on disk."""
+    p = Path(name_or_path)
+    if p.is_absolute():
+        if (p / "manifest.json").exists():
+            return p
+        raise FileNotFoundError(f"No manifest.json in {p}")
+    candidate = Path(str(files("alpha_lab.adapters") / name_or_path))
+    if (candidate / "manifest.json").is_file():
+        return candidate
+    available = [
+        d.name for d in files("alpha_lab.adapters").iterdir()
+        if (d / "manifest.json").is_file()
+    ]
+    raise FileNotFoundError(
+        f"Adapter '{name_or_path}' not found. Available: {available}"
+    )
 
 
 def load_adapter(adapter_dir: str | Path) -> DomainAdapter:
-    """Load a DomainAdapter from a directory on disk.
-
-    Reads manifest.json for metric/experiment config, then loads
-    each prompt .md file and domain_knowledge.md.
-    """
+    """Load a DomainAdapter from a directory on disk."""
     adapter_dir = Path(adapter_dir)
     manifest_path = adapter_dir / "manifest.json"
 
@@ -46,7 +56,6 @@ def load_adapter(adapter_dir: str | Path) -> DomainAdapter:
     with open(manifest_path) as f:
         manifest: dict[str, Any] = json.load(f)
 
-    # Parse metric config
     metric_raw = manifest.get("metric", {})
     metric = MetricConfig(
         primary_metric=metric_raw.get("primary_metric", "sharpe"),
@@ -56,10 +65,14 @@ def load_adapter(adapter_dir: str | Path) -> DomainAdapter:
         secondary_metrics=metric_raw.get("secondary_metrics", []),
     )
 
-    # Parse experiment structure
     exp_raw = manifest.get("experiment", {})
+    raw_required = exp_raw.get("required_files", [])
+    if not isinstance(raw_required, list) or not all(isinstance(f, str) for f in raw_required):
+        raise ValueError(
+            f"manifest.json: experiment.required_files must be a list of strings, got {raw_required!r}"
+        )
     experiment = ExperimentStructure(
-        required_files=exp_raw.get("required_files", ["strategy.py", "run_experiment.py"]),
+        required_files=raw_required,
         entry_point=exp_raw.get("entry_point", "run_experiment.py"),
         results_dir=exp_raw.get("results_dir", "results"),
         results_file=exp_raw.get("results_file", "metrics.json"),
@@ -67,21 +80,19 @@ def load_adapter(adapter_dir: str | Path) -> DomainAdapter:
         framework_files=exp_raw.get("framework_files", []),
     )
 
-    # Load prompts from .md files
     prompts: dict[str, str] = {}
     for key in PROMPT_KEYS:
         prompt_file = adapter_dir / f"{key}.md"
         if prompt_file.exists():
             prompts[key] = prompt_file.read_text()
 
-    # Validate that all required prompts are present
-    missing_keys = [key for key in PROMPT_KEYS if key not in prompts]
-    if missing_keys:
-        missing_files = ", ".join(f"{key}.md" for key in missing_keys)
-        raise FileNotFoundError(
-            f"Missing prompt files in adapter directory {adapter_dir}: {missing_files}"
+    missing = [k for k in PROMPT_KEYS if k not in prompts]
+    if missing:
+        raise ValueError(
+            f"Adapter {adapter_dir.name} is missing prompt files: "
+            f"{', '.join(f'{k}.md' for k in missing)}"
         )
-    # Load domain knowledge
+
     domain_knowledge = ""
     dk_path = adapter_dir / "domain_knowledge.md"
     if dk_path.exists():
@@ -106,7 +117,6 @@ def save_adapter(adapter: DomainAdapter, adapter_dir: str | Path) -> None:
     adapter_dir = Path(adapter_dir)
     adapter_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write manifest.json
     manifest = {
         "domain_name": adapter.domain_name,
         "domain_description": adapter.domain_description,
@@ -131,36 +141,29 @@ def save_adapter(adapter: DomainAdapter, adapter_dir: str | Path) -> None:
     with open(adapter_dir / "manifest.json", "w") as f:
         json.dump(manifest, f, indent=2)
 
-    # Write prompt files
     for key, content in adapter.prompts.items():
         (adapter_dir / f"{key}.md").write_text(content)
 
-    # Write domain knowledge
     if adapter.domain_knowledge:
         (adapter_dir / "domain_knowledge.md").write_text(adapter.domain_knowledge)
 
 
-def load_builtin_adapter(name: str) -> DomainAdapter:
-    """Load a built-in reference adapter by name."""
-    adapter_dir = _BUILTINS_DIR / name
-    if not adapter_dir.is_dir():
-        raise FileNotFoundError(
-            f"Built-in adapter '{name}' not found. "
-            f"Available: {BUILTIN_ADAPTERS}"
-        )
-    return load_adapter(adapter_dir)
-
-
-def copy_builtin_to_workspace(name: str, workspace_adapter_dir: str | Path) -> None:
-    """Copy a built-in adapter directory to the workspace."""
-    src = _BUILTINS_DIR / name
-    if not src.is_dir():
-        raise FileNotFoundError(f"Built-in adapter '{name}' not found")
-    dest = Path(workspace_adapter_dir)
+def copy_adapter_to_workspace(src: Path, dest: Path) -> None:
+    """Copy an adapter directory to the workspace."""
     if dest.exists():
         shutil.rmtree(dest)
     shutil.copytree(src, dest)
-    logger.info("Copied built-in adapter '%s' to %s", name, dest)
+    logger.info("Copied adapter %s to %s", src, dest)
+
+
+def resolve_reference_adapter(domain_name: str) -> DomainAdapter:
+    """Return the reference adapter for *domain_name*.
+
+    Resolves via :func:`_resolve_adapter_path`; raises
+    :class:`FileNotFoundError` if *domain_name* does not match a packaged
+    adapter (or an absolute path). No silent fallback.
+    """
+    return load_adapter(_resolve_adapter_path(domain_name))
 
 
 def resolve_adapter(
@@ -169,23 +172,19 @@ def resolve_adapter(
 ) -> DomainAdapter:
     """Resolve which adapter to use. Priority:
 
-    1. Workspace adapter ({workspace}/adapter/) — always wins if present
-    2. Built-in adapter matching domain name exactly
-    3. Built-in time_series as fallback
+    1. Workspace adapter ({workspace}/adapter/) -- always wins if present
+    2. Adapter by name or absolute path
     """
     workspace = Path(workspace)
     ws_adapter = workspace / "adapter"
 
-    # 1. Workspace adapter
     if (ws_adapter / "manifest.json").exists():
         logger.info("Loading workspace adapter from %s", ws_adapter)
         return load_adapter(ws_adapter)
 
-    # 2. Built-in matching domain name
-    if domain and domain in BUILTIN_ADAPTERS:
-        logger.info("Loading built-in adapter: %s", domain)
-        return load_builtin_adapter(domain)
+    if not domain:
+        raise ValueError("No workspace adapter found and no domain specified")
 
-    # 3. Fallback to time_series
-    logger.info("No adapter found, falling back to built-in time_series")
-    return load_builtin_adapter("time_series")
+    adapter_path = _resolve_adapter_path(domain)
+    logger.info("Loading adapter: %s", adapter_path)
+    return load_adapter(adapter_path)

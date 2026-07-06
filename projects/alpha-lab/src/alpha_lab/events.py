@@ -3,8 +3,25 @@
 from __future__ import annotations
 
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from typing import Any
+
+
+def _sanitize_bytes(obj: Any) -> Any:
+    """Replace raw bytes with a placeholder so json.dumps doesn't fail.
+
+    Bedrock tool results embed raw image bytes in the history; those end up
+    in ApiRequestEvent.input. The image content is already logged verbatim
+    in the preceding ToolResultEvent (base64 string), so the placeholder
+    here loses nothing.
+    """
+    if isinstance(obj, bytes):
+        return f"<bytes len={len(obj)}>"
+    if isinstance(obj, dict):
+        return {k: _sanitize_bytes(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_bytes(v) for v in obj]
+    return obj
 
 
 @dataclass
@@ -38,7 +55,7 @@ class AgentTextEvent(AgentEvent):
 
 @dataclass
 class ApiRequestEvent(AgentEvent):
-    """Full API request payload sent to OpenAI."""
+    """Full API request payload sent to the active LLM provider (OpenAI or Bedrock)."""
 
     type: str = "api_request"
     model: str = ""
@@ -48,10 +65,15 @@ class ApiRequestEvent(AgentEvent):
     previous_response_id: str | None = None
     reasoning_effort: str = ""
 
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["input"] = _sanitize_bytes(d["input"])
+        return d
+
 
 @dataclass
 class ApiResponseEvent(AgentEvent):
-    """Full API response received from OpenAI."""
+    """Full API response received from the active LLM provider (OpenAI or Bedrock)."""
 
     type: str = "api_response"
     response_id: str = ""
@@ -142,3 +164,42 @@ class FileChangedEvent(AgentEvent):
     type: str = "file_changed"
     change: str = ""  # added | modified | deleted
     path: str = ""  # relative to workspace
+
+
+@dataclass
+class MetricsEvent(AgentEvent):
+    """A sandboxed child's raw metric counters, for merging into the parent collector."""
+
+    type: str = "metrics"
+    counters: dict = field(default_factory=dict)
+
+
+_EVENT_CLASSES = (
+    StatusEvent,
+    AgentTextEvent,
+    ApiRequestEvent,
+    ApiResponseEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+    QuestionEvent,
+    ErrorEvent,
+    PhaseEvent,
+    ExperimentEvent,
+    BoardSummaryEvent,
+    FileChangedEvent,
+    MetricsEvent,
+)
+_EVENT_BY_TYPE = {
+    cls.__dataclass_fields__["type"].default: cls for cls in _EVENT_CLASSES
+}
+
+
+def event_from_dict(data: dict) -> AgentEvent:
+    """Reconstruct a typed event from a ``to_dict()`` payload (e.g. a relayed JSONL line).
+
+    Falls back to the base ``AgentEvent`` for unknown ``type`` values, and ignores
+    extra keys (such as the ``datetime``/``run`` annotations log writers add).
+    """
+    event_class = _EVENT_BY_TYPE.get(data.get("type", ""), AgentEvent)
+    known = {field.name for field in fields(event_class)}
+    return event_class(**{key: value for key, value in data.items() if key in known})

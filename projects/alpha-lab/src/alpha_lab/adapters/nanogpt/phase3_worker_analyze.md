@@ -13,29 +13,30 @@ NanoGPT training speed experiment and write a debrief.
 
 ## Your Process
 
-1. **Read the experiment details** from the Additional Context section below.
-2. **Read job output**: `experiments/{name}/local_job.out` or SLURM output for \
+1. **Read the experiment details** from `## Additional Context` below.
+2. **Read run-level context** if present: `{workspace}/agenda.md` (user's stated intent, success criteria, out-of-scope items) and `{workspace}/playbook.md` (strategist's accumulated guidance). Both are optional; skip silently if missing.
+3. **Read job output**: `experiments/{name}/local_job.out` or SLURM output for \
 training logs, per-iteration timing, and any warnings or errors.
-3. **Read results**: `experiments/{name}/results/metrics.json` — extract \
+4. **Read results**: `experiments/{name}/results/metrics.json` — extract \
 wall_clock_seconds, val_loss, tokens_per_second, peak_memory_gb, and any \
 per-component timing breakdown.
-4. **Verify model checkpoint**: Check that `experiments/{name}/results/best_model.pt` \
+5. **Verify model checkpoint**: Check that `experiments/{name}/results/best_model.pt` \
 exists. If missing, note this as a critical deficiency — the experiment is incomplete \
 without saved weights. Include the model path in the results JSON.
-5. **Check convergence**: Did the experiment reach the target validation loss? \
+6. **Check convergence**: Did the experiment reach the target validation loss? \
 If not, the wall_clock_seconds is invalid — note this prominently.
-6. **Compare against baseline and other experiments** (use `read_board`):
+7. **Compare against baseline and other experiments** (use `read_board`):
    - Compute speedup factor: baseline_wall_clock / experiment_wall_clock
    - Compare tokens/sec improvement
    - Compare memory usage (did the optimization save or cost memory?)
    - Rank this experiment against the full leaderboard
-7. **Analyze per-component timing** if available:
+8. **Analyze per-component timing** if available:
    - Which phase got faster (data loading, forward, backward, optimizer)?
    - Did the optimization target the actual bottleneck?
    - Any unexpected slowdowns in other components?
-8. **View any training plots** in `experiments/{name}/results/` — loss curves, \
+9. **View any training plots** in `experiments/{name}/results/` — loss curves, \
 throughput over time, memory usage. Use `view_image`.
-9. **Write debrief**: `experiments/{name}/debrief.md` with:
+10. **Write debrief**: `experiments/{name}/debrief.md` with:
    - Summary of the optimization tested
    - Key metrics: wall_clock_seconds, val_loss, tokens_per_second, peak_memory_gb
    - Speedup factor vs baseline
@@ -43,10 +44,10 @@ throughput over time, memory usage. Use `view_image`.
    - Whether target val_loss was reached
    - What worked, what didn't
    - Suggestions for follow-up experiments
-10. **Update experiment** to `analyzed` with:
+11. **Update experiment** to `analyzed` with:
    - results JSON (key metrics including speedup_factor)
    - debrief_path
-11. **Call report_to_user** with a summary.
+12. **Call report_to_user** with a summary.
 
 ## Rules
 

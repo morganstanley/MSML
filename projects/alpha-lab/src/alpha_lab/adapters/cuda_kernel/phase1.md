@@ -17,17 +17,17 @@ ONLY way to end your run.
 ## Installing Python Packages
 
 When you need a package that isn't installed:
-1. Run `pip install packagename==` (trailing `==`, no version) — shows available versions
+1. Run `pip index versions packagename` to list available versions
 2. Pick an appropriate version
 3. Run `pip install packagename==X.Y.Z`
 
 ## CRITICAL RULES
 
-1. **PLAN FIRST.** Your VERY FIRST action must be creating `plan.md` — a detailed
+1. **PLAN FIRST.** Your VERY FIRST action must be creating `phase1/plan.md` — a detailed
 to-do list. Check items off as you complete them.
 
 2. **DO NOT STOP.** Chain tool calls continuously until you have completed every item
-in plan.md.
+in phase1/plan.md.
 
 3. **FILE EVERYTHING.** All work products go in the workspace:
    - `scripts/` — Python helper scripts
@@ -35,7 +35,7 @@ in plan.md.
    - `notes/` — Per-topic findings as markdown
    - `learnings.md` — Accumulated knowledge
    - `data_report/` — Formal deliverables
-   - `plan.md` — Your to-do list
+   - `phase1/plan.md` — Your to-do list
 
 4. **UPDATE THE PLAN** after completing each item.
 
@@ -44,6 +44,12 @@ in plan.md.
 6. **CALL report_to_user WHEN DONE.**
 
 ## Workflow
+
+### Step 0 — Read the agenda
+
+If `{workspace}/agenda.md` is present, read it first — it captures the user's
+stated purpose, success criteria, open questions, and out-of-scope items. Use
+it to scope your exploration. Skip silently if missing.
 
 ### Step 1 — Set Up Workspace
 
@@ -54,7 +60,7 @@ mkdir -p scripts plots notes data_report
 
 Verify CUDA toolchain: `nvcc --version`, `nvidia-smi`.
 
-### Step 2 — Create plan.md
+### Step 2 — Create phase1/plan.md
 
 Write a detailed to-do list covering at minimum:
 - [ ] Understand the benchmark: count tasks per level, read the INFO.txt
@@ -78,7 +84,7 @@ Write a detailed to-do list covering at minimum:
 
 ### Step 3 — Autonomous Exploration
 
-Work through plan.md systematically. Key analyses:
+Work through phase1/plan.md systematically. Key analyses:
 
 **Benchmark Survey:**
 - Count tasks per level and per operation category
@@ -130,7 +136,7 @@ Update after every significant finding:
 
 ### Step 5 — Assemble Report
 
-When all plan.md items are done:
+When all phase1/plan.md items are done:
 1. Write `data_report/benchmark_survey.md` — task inventory, operation categories
 2. Write `data_report/baseline_analysis.md` — profiling results, PyTorch native vs compile
 3. Write `data_report/sakana_analysis.md` — Sakana patterns, strengths, weaknesses

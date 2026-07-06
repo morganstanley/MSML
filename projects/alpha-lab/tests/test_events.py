@@ -7,6 +7,7 @@ import json
 from alpha_lab.events import (
     AgentEvent,
     AgentTextEvent,
+    ApiRequestEvent,
     BoardSummaryEvent,
     ErrorEvent,
     ExperimentEvent,
@@ -16,7 +17,42 @@ from alpha_lab.events import (
     StatusEvent,
     ToolCallEvent,
     ToolResultEvent,
+    event_from_dict,
 )
+
+
+class TestEventFromDict:
+    """event_from_dict reconstructs typed events from to_dict() payloads (relay path)."""
+
+    def test_round_trips_each_event_type(self) -> None:
+        events = [
+            StatusEvent(status="done", detail="finished"),
+            AgentTextEvent(delta="hi", full_text="hi there"),
+            ToolCallEvent(call_id="c1", name="shell_exec", arguments="{}"),
+            ToolResultEvent(call_id="c1", name="shell_exec", output="ok"),
+            QuestionEvent(question_id="q1", question="why?"),
+            ErrorEvent(message="boom"),
+            PhaseEvent(phase="phase1", step="exploration", iteration=2, status="done"),
+            ExperimentEvent(experiment_id=3, name="exp", status="done"),
+            BoardSummaryEvent(counts={"done": 1}),
+            FileChangedEvent(change="modified", path="learnings.md"),
+        ]
+        for event in events:
+            restored = event_from_dict(event.to_dict())
+            assert type(restored) is type(event)
+            assert restored == event
+
+    def test_unknown_type_falls_back_to_base(self) -> None:
+        restored = event_from_dict({"type": "totally_unknown", "timestamp": 1.0})
+        assert type(restored) is AgentEvent
+
+    def test_ignores_extra_log_annotations(self) -> None:
+        # Log writers add datetime/run keys; event_from_dict must ignore them.
+        restored = event_from_dict(
+            {"type": "status", "status": "done", "detail": "d", "datetime": "x", "run": "r"}
+        )
+        assert isinstance(restored, StatusEvent)
+        assert restored.status == "done"
 
 
 class TestEventSerialization:
@@ -121,6 +157,28 @@ class TestEventSerialization:
         d = e.to_dict()
         assert d["type"] == "file_changed"
         assert d["change"] == "modified"
+        json.dumps(d)
+
+    def test_api_request_event_sanitizes_bytes(self) -> None:
+        # Bedrock image-tool payload shape: bytes live under
+        # content[*].image.source.bytes; they must not survive to_dict() raw
+        # because json.dumps cannot encode bytes.
+        payload = [
+            {
+                "role": "user",
+                "content": [
+                    {"image": {"source": {"bytes": b"\x89PNG\r\n\x1a\n..."}}},
+                    {"text": "describe this image"},
+                ],
+            }
+        ]
+        e = ApiRequestEvent(model="claude-opus-4-7", input=payload)
+        d = e.to_dict()
+        sanitized = d["input"][0]["content"][0]["image"]["source"]["bytes"]
+        assert isinstance(sanitized, str)
+        assert sanitized.startswith("<bytes len=")
+        # The original (unsanitized) dataclass field is untouched, but to_dict
+        # is what hits the JSON encoder, so that's what must be serializable.
         json.dumps(d)
 
 

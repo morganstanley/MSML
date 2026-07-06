@@ -35,9 +35,7 @@ class MetricConfig:
 class ExperimentStructure:
     """Describes the expected file layout for experiments."""
 
-    required_files: list[str] = field(
-        default_factory=lambda: ["strategy.py", "run_experiment.py"]
-    )
+    required_files: list[str] = field(default_factory=list)
     entry_point: str = "run_experiment.py"
     results_dir: str = "results"
     results_file: str = "metrics.json"
@@ -75,7 +73,7 @@ class DomainAdapter:
     phase2_review_file: str = "review.md"
 
 
-# All valid prompt keys (must match PROMPT_REGISTRY keys in prompts.py)
+# Prompt keys every adapter must provide (validated at load time).
 PROMPT_KEYS = [
     "phase1",
     "phase2_builder",

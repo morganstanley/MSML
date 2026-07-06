@@ -82,9 +82,7 @@ export default function FileViewer({ selectedFile }: FileViewerProps) {
     setLoading(true);
     setError(null);
 
-    const encodedFile = encodeURIComponent(selectedFile);
-
-    fetch(`/api/file/${encodedFile}`)
+    fetch(`/api/file/${selectedFile}`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();

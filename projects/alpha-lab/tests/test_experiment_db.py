@@ -8,7 +8,23 @@ import time
 
 import pytest
 
-from alpha_lab.experiment_db import KANBAN_COLUMNS, Experiment, ExperimentDB
+from pathlib import Path
+
+from alpha_lab.experiment_db import (
+    CANONICAL_RUN_COMPLETE_SENTINEL,
+    KANBAN_COLUMNS,
+    Experiment,
+    ExperimentDB,
+    is_smoke_result,
+)
+
+
+def _touch_sentinel(db: ExperimentDB, exp_name: str) -> None:
+    """Create the canonical-run sentinel for a row."""
+    workspace = Path(db.db_path).parent
+    results = workspace / "experiments" / exp_name / "results"
+    results.mkdir(parents=True, exist_ok=True)
+    (results / CANONICAL_RUN_COMPLETE_SENTINEL).touch()
 
 
 class TestExperimentDBCreate:
@@ -212,7 +228,7 @@ class TestExperimentDBLeaderboard:
     """Test leaderboard sorting."""
 
     def test_leaderboard_sorted_by_sharpe(self, populated_db: ExperimentDB) -> None:
-        leaders = populated_db.leaderboard("sharpe", 10)
+        leaders = populated_db.leaderboard("sharpe", 10, "maximize")
         assert len(leaders) >= 2
         # DeepAR (sharpe=2.1) should be first, then TCN (1.5), then PatchTST (0.8)
         sharpes = []
@@ -222,21 +238,226 @@ class TestExperimentDBLeaderboard:
         assert sharpes == sorted(sharpes, reverse=True)
 
     def test_leaderboard_top_n(self, populated_db: ExperimentDB) -> None:
-        leaders = populated_db.leaderboard("sharpe", 1)
+        leaders = populated_db.leaderboard("sharpe", 1, "maximize")
         assert len(leaders) == 1
         m = json.loads(leaders[0].results_json or "{}")
         assert m["sharpe"] == 2.1  # DeepAR
 
     def test_leaderboard_invalid_metric(self, populated_db: ExperimentDB) -> None:
         # Should still return experiments, just with -inf sort
-        leaders = populated_db.leaderboard("nonexistent_metric", 5)
+        leaders = populated_db.leaderboard("nonexistent_metric", 5, "maximize")
         assert len(leaders) >= 1
 
     def test_leaderboard_bad_json(self, db: ExperimentDB) -> None:
         exp_id = db.create("bad_json", "D", "H", "{}")
         db.set_results(exp_id, "not valid json")
-        leaders = db.leaderboard("sharpe", 10)
+        _touch_sentinel(db, "bad_json")
+        leaders = db.leaderboard("sharpe", 10, "maximize")
         assert len(leaders) == 1  # Still returned, just sorted as -inf
+
+    def test_leaderboard_nan_metric_sorts_to_bottom(self, db: ExperimentDB) -> None:
+        """A NaN metric must not poison the sort order."""
+        good_id = db.create("good", "D", "H", "{}")
+        db.set_results(good_id, '{"sharpe": 1.0}')
+        _touch_sentinel(db, "good")
+        nan_id = db.create("nan_run", "D", "H", "{}")
+        db.set_results(nan_id, '{"sharpe": NaN}')
+        _touch_sentinel(db, "nan_run")
+        leaders = db.leaderboard("sharpe", 10, "maximize")
+        assert [e.name for e in leaders] == ["good", "nan_run"]
+
+    def test_leaderboard_non_dict_results_sorts_to_bottom(self, db: ExperimentDB) -> None:
+        """results_json that parses to a list/scalar is treated as -inf."""
+        good_id = db.create("good", "D", "H", "{}")
+        db.set_results(good_id, '{"sharpe": 0.5}')
+        _touch_sentinel(db, "good")
+        list_id = db.create("listy", "D", "H", "{}")
+        db.set_results(list_id, '[1, 2, 3]')
+        _touch_sentinel(db, "listy")
+        leaders = db.leaderboard("sharpe", 10, "maximize")
+        assert [e.name for e in leaders] == ["good", "listy"]
+
+    def test_leaderboard_minimize_sorts_ascending(self, db: ExperimentDB) -> None:
+        """Minimize direction puts smallest metric first, missing last."""
+        a = db.create("low", "D", "H", "{}")
+        db.set_results(a, '{"loss": 0.1}')
+        b = db.create("high", "D", "H", "{}")
+        db.set_results(b, '{"loss": 5.0}')
+        c = db.create("mid", "D", "H", "{}")
+        db.set_results(c, '{"loss": 1.0}')
+        d = db.create("missing", "D", "H", "{}")
+        db.set_results(d, '{"other": 9}')
+        # Post-merge: leaderboard is gated by the canonical-run sentinel, so
+        # these rows must have one to appear (preserves the direction-sort intent).
+        for _n in ("low", "high", "mid", "missing"):
+            _touch_sentinel(db, _n)
+        leaders = db.leaderboard("loss", 10, "minimize")
+        assert [e.name for e in leaders] == ["low", "mid", "high", "missing"]
+
+    def test_leaderboard_invalid_direction_raises(self, db: ExperimentDB) -> None:
+        with pytest.raises(ValueError, match="direction must be"):
+            db.leaderboard("sharpe", 10, "ascending")
+
+
+class TestSmokeResultDetection:
+    """Tests for is_smoke_result() and leaderboard smoke filtering."""
+
+    def test_smoke_test_true_detected(self) -> None:
+        assert is_smoke_result('{"sharpe": 1.5, "smoke_test": true}') is True
+
+    def test_smoke_test_false_not_detected(self) -> None:
+        assert is_smoke_result('{"sharpe": 1.5, "smoke_test": false}') is False
+
+    def test_no_smoke_flag_not_detected(self) -> None:
+        assert is_smoke_result('{"sharpe": 1.5}') is False
+
+    def test_none_not_detected(self) -> None:
+        assert is_smoke_result(None) is False
+
+    def test_empty_string_not_detected(self) -> None:
+        assert is_smoke_result("") is False
+
+    def test_bad_json_not_detected(self) -> None:
+        assert is_smoke_result("not json") is False
+
+    def test_non_dict_not_detected(self) -> None:
+        assert is_smoke_result('[1, 2, 3]') is False
+
+    def test_smoke_flagged_meta_not_sufficient(self) -> None:
+        """The _smoke_flagged tag alone does not trigger — only smoke_test matters."""
+        assert is_smoke_result('{"sharpe": 0.5, "_smoke_flagged": true}') is False
+
+    def test_leaderboard_excludes_smoke(self, db: ExperimentDB) -> None:
+        """Smoke-test results must never appear on the leaderboard, even
+        if a sentinel exists."""
+        good_id = db.create("full_run", "D", "H", "{}")
+        db.set_results(good_id, '{"sharpe": 1.0}')
+        _touch_sentinel(db, "full_run")
+        smoke_id = db.create("smoke_run", "D", "H", "{}")
+        db.set_results(smoke_id, '{"sharpe": 99.0, "smoke_test": true}')
+        _touch_sentinel(db, "smoke_run")
+        leaders = db.leaderboard("sharpe", 10, "maximize")
+        names = [e.name for e in leaders]
+        assert "full_run" in names
+        assert "smoke_run" not in names
+
+    def test_leaderboard_all_smoke_returns_empty(self, db: ExperimentDB) -> None:
+        """If all results are smoke, leaderboard should be empty."""
+        s1 = db.create("smoke_a", "D", "H", "{}")
+        db.set_results(s1, '{"sharpe": 5.0, "smoke_test": true}')
+        _touch_sentinel(db, "smoke_a")
+        s2 = db.create("smoke_b", "D", "H", "{}")
+        db.set_results(s2, '{"sharpe": 3.0, "smoke_test": true}')
+        _touch_sentinel(db, "smoke_b")
+        leaders = db.leaderboard("sharpe", 10, "maximize")
+        assert leaders == []
+
+
+class TestLeaderboardSentinelFilter:
+    """Leaderboard inclusion is gated by the canonical-run sentinel file."""
+
+    def test_leaderboard_excludes_rows_without_sentinel(self, db: ExperimentDB) -> None:
+        """Rows without a sentinel file are excluded from the leaderboard."""
+        good_id = db.create("full_run", "D", "H", "{}")
+        db.set_results(good_id, '{"sharpe": 1.0}')
+        _touch_sentinel(db, "full_run")
+        # failed_canonical has smoke-tainted metrics — but NO sentinel.
+        bad_id = db.create("failed_canonical", "D", "H", "{}")
+        db.set_results(bad_id, '{"sharpe": 99.0}')
+        leaders = db.leaderboard("sharpe", 10, "maximize")
+        names = [e.name for e in leaders]
+        assert "full_run" in names
+        assert "failed_canonical" not in names
+
+    def test_leaderboard_excludes_no_sentinel_even_without_smoke_flag(
+        self, db: ExperimentDB,
+    ) -> None:
+        """Rows without a sentinel are excluded even without the smoke_test flag."""
+        no_flag_id = db.create("smoke_no_flag", "D", "H", "{}")
+        db.set_results(no_flag_id, '{"sharpe": 50.0}')
+        good_id = db.create("good_run", "D", "H", "{}")
+        db.set_results(good_id, '{"sharpe": 1.0}')
+        _touch_sentinel(db, "good_run")
+        leaders = db.leaderboard("sharpe", 10, "maximize")
+        names = [e.name for e in leaders]
+        assert "good_run" in names
+        assert "smoke_no_flag" not in names
+
+    def test_leaderboard_keeps_rows_with_narrative_error_when_sentinel_exists(
+        self, db: ExperimentDB,
+    ) -> None:
+        """Rows with a sentinel are included regardless of `error` column content."""
+        exp_id = db.create("ok_row", "D", "H", "{}")
+        db.set_results(exp_id, '{"sharpe": 1.5}')
+        db.set_error(exp_id, "Fixed: fixed a typo in config.yaml")
+        _touch_sentinel(db, "ok_row")
+        leaders = db.leaderboard("sharpe", 10, "maximize")
+        names = [e.name for e in leaders]
+        assert "ok_row" in names
+
+
+class TestExperimentDBListExperiments:
+    """Test paginated list_experiments query."""
+
+    def test_pagination_respects_limit(self, populated_db: ExperimentDB) -> None:
+        exps, total = populated_db.list_experiments(limit=3, offset=0)
+        assert len(exps) == 3
+        assert total == 7
+
+    def test_pagination_offset(self, populated_db: ExperimentDB) -> None:
+        first, _ = populated_db.list_experiments(limit=3, offset=0)
+        second, _ = populated_db.list_experiments(limit=3, offset=3)
+        first_ids = {e.id for e in first}
+        second_ids = {e.id for e in second}
+        assert first_ids.isdisjoint(second_ids)
+
+    def test_pagination_offset_past_end_returns_empty(self, populated_db: ExperimentDB) -> None:
+        exps, total = populated_db.list_experiments(limit=10, offset=100)
+        assert exps == []
+        assert total == 7  # total is pre-pagination
+
+    def test_status_filter(self, populated_db: ExperimentDB) -> None:
+        exps, total = populated_db.list_experiments(status_filter="done")
+        assert total == 1
+        assert all(e.status == "done" for e in exps)
+
+    def test_name_search(self, populated_db: ExperimentDB) -> None:
+        exps, total = populated_db.list_experiments(name_search="tcn")
+        assert total == 1
+        assert exps[0].name == "exp_tcn_v1"
+
+    def test_pagination_stable_on_updated_at_ties(self, db: ExperimentDB) -> None:
+        """Pagination must not skip or double-count rows when updated_at ties."""
+        import sqlite3
+        for i in range(10):
+            db.create(f"exp_tie_{i}", "D", "H", "{}")
+        # Force identical updated_at across all rows to simulate the case
+        # where time.time() granularity ties multiple rows.
+        conn = sqlite3.connect(db.db_path, timeout=10)
+        conn.execute("UPDATE experiments SET updated_at = 1000.0")
+        conn.commit()
+        conn.close()
+        seen_ids: set[int] = set()
+        for offset in range(0, 10, 3):
+            exps, _ = db.list_experiments(limit=3, offset=offset)
+            for exp in exps:
+                assert exp.id not in seen_ids, f"id={exp.id} returned twice"
+                seen_ids.add(exp.id)
+        assert len(seen_ids) == 10
+
+    def test_leaderboard_infinity_metric(self, db: ExperimentDB) -> None:
+        """+/-Infinity must round-trip through the sort without breaking order."""
+        good_id = db.create("mid", "D", "H", "{}")
+        db.set_results(good_id, '{"sharpe": 1.0}')
+        _touch_sentinel(db, "mid")
+        inf_id = db.create("top", "D", "H", "{}")
+        db.set_results(inf_id, '{"sharpe": Infinity}')
+        _touch_sentinel(db, "top")
+        neg_id = db.create("bottom", "D", "H", "{}")
+        db.set_results(neg_id, '{"sharpe": -Infinity}')
+        _touch_sentinel(db, "bottom")
+        leaders = db.leaderboard("sharpe", 10, "maximize")
+        assert [e.name for e in leaders] == ["top", "mid", "bottom"]
 
 
 class TestExperimentDBStaleWorkers:
