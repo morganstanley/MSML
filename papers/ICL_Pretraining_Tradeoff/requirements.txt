@@ -1,0 +1,34 @@
+# Runtime dependencies (CPU / GPU / TPU).
+#
+# JAX is intentionally loosely pinned here: the wheel you need depends on your
+# accelerator. Install it first, following
+# https://docs.jax.dev/en/latest/installation.html
+#
+#   CPU:  pip install "jax[cpu]"
+#   GPU:  pip install "jax[cuda12]"
+#   TPU:  pip install "jax[tpu]" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+#
+# then `pip install -r requirements.txt && pip install -e .`
+#
+# The exact pins used for the experiments in the paper (JAX 0.4.8 on TPU)
+# are kept in requirements-tpu-lock.txt for reference.
+
+jax>=0.4.8
+jaxlib>=0.4.7
+flax>=0.6.8
+optax>=0.1.4
+orbax-checkpoint>=0.1.7
+chex>=0.1.7
+equinox>=0.11.0
+safetensors>=0.4.0
+
+hydra-core>=1.3.2
+omegaconf>=2.3.0
+ml-collections>=0.1.1
+absl-py>=1.4.0
+PyYAML>=6.0
+
+numpy>=1.23.5
+scipy>=1.10.1
+matplotlib>=3.7.1
+tqdm>=4.65.0

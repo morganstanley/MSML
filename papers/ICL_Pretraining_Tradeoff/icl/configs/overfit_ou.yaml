@@ -1,0 +1,65 @@
+dtype: float32
+output_dir: ./outputs
+log_level: INFO
+add_seed: 0
+
+task:
+  name: ornstein_uhlenbeck
+  ou_step: 0.2
+  n_tasks: 2
+  n_data: 2
+  n_dims: 2
+  n_points: 4
+  batch_size: 64
+  data_seed: 101
+  task_seed: 102
+  noise_seed: 103
+  data_scale: 1.0
+  task_scale: 1.0
+  noise_scale: 0.
+  distrib_name: normal
+  distrib_param: null
+  n_max_points: 4
+  use_weights: true
+
+model:
+  name: single_seq_transformer
+  n_points: 4
+  n_layer: 4
+  n_embd: 16
+  n_head: 2
+  seed: 100
+  use_ln: true
+  use_linear_attention: true
+  n_out: 2
+
+training:
+  optimizer: adamw
+  lr: 1.0e-1
+  schedule: warmup_cosine_decay
+  warmup_steps: 50
+  total_steps: 5000
+  weight_decay: 0.01
+  clip_max_norm: 1.0
+
+eval:
+  n_samples: 16
+  batch_size: 16
+  data_seed: 104
+  task_seed: 105
+  noise_seed: 106
+  every: 1000
+  eval_n_points: 4
+  task_centers:
+    - 2.0
+    - 4.0
+    - 6.0
+    - 8.0
+
+# Hydra settings
+hydra:
+  run:
+    dir: ${output_dir}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: ${output_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}

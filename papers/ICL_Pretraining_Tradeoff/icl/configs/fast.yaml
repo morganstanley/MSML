@@ -1,0 +1,96 @@
+dtype: float32
+output_dir: ./outputs
+log_level: INFO
+
+task:
+  name: ornstein_uhlenbeck
+  n_tasks: 4
+  n_data: 0
+  n_dims: 4                # Ending dimensions (will grow to max_n_dims)
+  n_points: 16             # Starting n_points (will grow with curriculum)
+  n_max_points: 64
+  batch_size: 8
+  data_seed: 101
+  task_seed: 102
+  noise_seed: 103
+  data_scale: 1.0
+  task_scale: 0.2          # Smaller scale for MLP parameters
+  noise_scale: 0.5
+  clip: null
+  use_weights: true
+  use_weight_sampling: true
+  distrib_name: student
+  distrib_param: .inf
+  ou_step: 0.8
+  fixed_support: true
+  # hidden_size: 16           # Ending hidden size
+  # kernel_exponent: 2.0    # Exponent for Volterra kernel (2.0 = quadratic, 3.0 = cubic)
+  
+  # Extended Curriculum Learning Configuration
+  # use_curriculum: false             # Enable curriculum learning
+  # curriculum_steps_thresh: 1        # Steps between increments (reduced for fast testing)
+  # curriculum_n_points_increment: 4  # How much to increase n_points
+  
+  # New curriculum dimensions (using auto-defaults for initial testing)
+  # max_hidden_size: auto-set to hidden_size
+  #curriculum_hidden_increment: 1   # How much to increase hidden size
+  # in_hidden_size: 8               # Starting hidden size
+  
+  # max_n_dims: auto-set to n_dims
+  # curriculum_dims_increment: 1     # How much to increase dimensions  
+  # min_n_dims: 8                   # Starting dimensions
+
+model:
+  name: single_seq_transformer
+  n_points: 64
+  n_layer: 2
+  n_embd: 8                # Increased to match maximum dimensional task
+  n_head: 2
+  seed: 100
+  use_ln: true
+  use_linear_attention: false
+  n_out: 4                # Output dimension matches task n_dims
+
+training:
+  optimizer: adam
+  lr: 1.0e-4
+  schedule: triangle
+  warmup_steps: 10
+  total_steps: 20
+  clip_max_norm: null
+  T_ramp_ratio: 0.2
+
+eval:
+  n_samples: 16
+  batch_size: 8
+  data_seed: 104
+  task_seed: 105
+  noise_seed: 106
+  every: 5
+  eval_n_points: 64
+  task_centers:
+    - 0.
+    - 0.25
+    - 0.5
+    - 0.75
+    - 1.0
+    - 1.25
+    - 1.5
+    - 1.75
+    - 2.0
+    - 2.25
+    - 2.5
+    - 2.75
+    - 3.0
+    - 3.25
+    - 3.5
+    - 3.75
+    - 4.0
+
+# Hydra settings
+hydra:
+  run:
+    dir: ${output_dir}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: ${output_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}
