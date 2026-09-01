@@ -1,0 +1,15 @@
+# DDiT Small model
+# Approx. 169M parameters
+# Checkpoint size: ~2.53 GB (2652109 KB)
+# hidden_size=768, n_blocks=12, n_heads=12
+name: small
+type: ddit
+hidden_size: 768
+cond_dim: 128
+length: 1024
+n_blocks: 12
+n_heads: 12
+scale_by_sigma: True
+dropout: 0.1
+tie_word_embeddings: False
+vocab_lookup: True

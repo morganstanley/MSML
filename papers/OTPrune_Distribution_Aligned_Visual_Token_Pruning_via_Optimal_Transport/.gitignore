@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.eggs/
+dist/
+build/
+
+# Environment
+.env
+env/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and outputs
+logs_final/
+*.log
+
+# HuggingFace cache
+hf_cache/
+
+# OS
+.DS_Store
+Thumbs.db

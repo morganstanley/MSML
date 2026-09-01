@@ -1,0 +1,8 @@
+checkpoints
+results
+scripts/wandb
+weights
+.env
+scripts/outputs
+train_aha.py
+inference.sh

@@ -1,0 +1,24 @@
+Context: You are a helpful judge. I will provide you with a JSON object with schema: {{"audio": "...", "caption": "...", "prompt": "...", "chosen": "...", "rejected": "..."}}, where:
+
+- "audio" is the path to the audio file (ignore it),
+- "caption" contains a description of the audio clip,
+- "prompt" contains a question about the audio clip,
+- "chosen" contains the correct response to the "prompt" that should be returned by an audio LLM. The correct response can be inferred from the "caption".
+- "rejected" contains the incorrect response that mimics the LLM hallucinations with one or more of the dimensions listed below:
+    - Event Omission: The model fails to mention perceptible events present in the audio (e.g., a faint hiss before a loud impact is ignored).
+    - False Event Identity: The model either (a) fabricates events that are not present in the audio or (b) assigns the wrong semantic label to an existing event (e.g., calling a cap gun a “whip” or inventing a “door opening” that never occurs).
+    - Temporal Relation Error: The model gets relations between events wrong. It swaps the chronological order, or misstates causal/sequence relations (e.g., saying B->A when A->B).
+    - Quantitative Temporal Error: The model errs on quantitative temporal attributes: incorrect counts of repeated events (count bias) or wrong comparative duration attributions (e.g., saying the shorter event is longest).
+
+Task:
+
+- Carefully read the caption, then compare the "rejected" response with the "chosen" response. 
+- Identify which hallucination dimension(s) does the "rejected" answer has.
+- Also give the reason of your judgement.
+- Output a JSON object with schema: {{"audio": "...", "caption": "...", "prompt": "...", "chosen": "...", "rejected": "...", "hallucination": "...", "reason": "..."}} where:
+    - "audio", "caption", "prompt", "chosen", and "rejected" should be exactly the same as the input.
+    - "hallucination" should contain a list of the names of the hallucination dimension.
+    - "reason" should contain the reason of your judgement.
+
+JSON object:
+{data}

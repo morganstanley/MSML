@@ -1,0 +1,5 @@
+name: mix
+
+ratio: 0.2 # maximum ratio of uniform noise
+gamma: 1 # default choice, controls the change rate of uniform noise ratio
+t_peak: 0.5 # controls the peak time of uniform noise ratio

@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# Database
+*.lance/
+*_lancedb_data/
+ariadnemem_lancedb_data/
+ecomem_lancedb_data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Results and logs
+*.log
+*_results*.json
+
+# Internal test scripts
+test_enhanced.py
+test_enhanced.sh
+
+# Internal development docs
+ENHANCED_FEATURES.md
+IMPLEMENTATION_COMPLETE.md
+OPTIMIZATION_OPPORTUNITIES.md
+TARGETED_FIXES.md
+
+# Config with secrets (use config.py.example instead)
+config.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+
+# Unrelated dataset files
+dataset/newfig*
+*.rar
+*.psd
+*.png

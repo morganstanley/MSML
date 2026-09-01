@@ -1,0 +1,36 @@
+# AriadneMem Requirements
+# Paper: AriadneMem: Threading the Maze of Lifelong Memory for LLM Agents
+
+# ============================================================================
+# Core Dependencies (Required)
+# ============================================================================
+
+# LLM API Client
+openai>=1.0.0
+
+# Data Validation & Models
+pydantic>=2.0.0
+
+# Vector Database
+lancedb>=0.1.0
+pyarrow>=12.0.0
+
+# Numerical Computing
+numpy>=1.24.0
+
+# Embedding Models (SentenceTransformers)
+sentence-transformers>=2.2.0
+torch>=2.0.0
+
+# ============================================================================
+# Evaluation Dependencies (Optional - only for test_locomo10.py)
+# ============================================================================
+
+# BLEU & METEOR Scores
+nltk>=3.8.0
+
+# ROUGE Scores
+rouge-score>=0.1.2
+
+# BERTScore
+bert-score>=0.3.13

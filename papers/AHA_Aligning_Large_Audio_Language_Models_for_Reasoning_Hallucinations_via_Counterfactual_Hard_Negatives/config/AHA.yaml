@@ -1,0 +1,3 @@
+root_dir: /scratch/ychen855/Data/audio/AHA
+train: train.json
+test: test.json

@@ -1,0 +1,37 @@
+[project]
+name = "lamr-single-turn-eval"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate",
+    "astchunk",
+    "datasets",
+    "editdistance",
+    "evaluate",
+    "FlagEmbedding",
+    "fire",
+    "huggingface-hub",
+    "langchain",
+    "langchain-core",
+    "langchain-openai",
+    "langgraph",
+    "llmlingua",
+    "loguru",
+    "modelscope",
+    "mteb",
+    "numpy",
+    "openai",
+    "pandas",
+    "peft",
+    "pydantic",
+    "requests",
+    "sentence-transformers",
+    "selective-context",
+    "torch",
+    "tqdm",
+    "transformers",
+    "tree-sitter",
+    "tree-sitter-python",
+    "tiktoken",
+    "vllm",
+]

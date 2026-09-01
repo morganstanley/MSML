@@ -1,0 +1,13 @@
+# DDiT Large model
+# Approx. 872M parameters (aligned with GPT-2 Large: 36 layers, 20 heads, 1280 hidden)
+name: largem
+type: ddit
+hidden_size: 1280
+cond_dim: 128
+length: 1024
+n_blocks: 36
+n_heads: 20
+scale_by_sigma: True
+dropout: 0.1
+tie_word_embeddings: False
+vocab_lookup: True

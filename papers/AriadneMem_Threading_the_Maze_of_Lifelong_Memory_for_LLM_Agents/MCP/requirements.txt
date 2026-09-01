@@ -1,0 +1,8 @@
+# AriadneMem MCP Server Dependencies
+
+# Web Framework (Streamable HTTP transport)
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# AriadneMem core dependencies (also install parent requirements.txt)
+# pip install -r ../requirements.txt

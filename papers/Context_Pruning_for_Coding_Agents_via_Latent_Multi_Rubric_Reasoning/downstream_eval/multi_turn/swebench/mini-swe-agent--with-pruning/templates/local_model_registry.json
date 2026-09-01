@@ -1,0 +1,23 @@
+{
+  "Qwen2.5-Coder-7B-Instruct": {
+    "max_tokens": 32768,
+    "input_cost_per_token": 0.0,
+    "output_cost_per_token": 0.0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  },
+  "Qwen2.5-Coder-32B-Instruct": {
+    "max_tokens": 32768,
+    "input_cost_per_token": 0.0,
+    "output_cost_per_token": 0.0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  },
+  "Qwen3-Coder-30B-A3B-Instruct": {
+    "max_tokens": 32768,
+    "input_cost_per_token": 0.0,
+    "output_cost_per_token": 0.0,
+    "litellm_provider": "openai",
+    "mode": "chat"
+  }
+}

@@ -1,0 +1,2 @@
+_target_: lightning.pytorch.strategies.FSDPStrategy
+sharding_strategy: SHARD_GRAD_OP
