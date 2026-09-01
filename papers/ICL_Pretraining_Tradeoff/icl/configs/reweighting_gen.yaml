@@ -1,0 +1,98 @@
+dtype: float32
+output_dir: ./outputs
+log_level: INFO
+add_seed: 0
+
+task:
+  name: noisy_linear_regression
+  n_tasks: 0
+  n_data: 0
+  n_dims: 8
+  n_points: 64
+  n_max_points: 64
+  batch_size: 256
+  data_seed: 101
+  task_seed: 102
+  noise_seed: 103
+  data_scale: 1.0
+  task_scale: 2.0
+  noise_scale: 0.1
+  clip: null
+  use_weights: false
+  use_weight_sampling: false
+  eval_ridge: true
+  distrib_name: generalized_normal 
+  distrib_param: 2
+
+model:
+  name: transformer
+  n_points: 64
+  n_layer: 6
+  n_embd: 32
+  n_head: 8
+  seed: 100
+  use_ln: true
+  use_linear_attention: false
+
+training:
+  optimizer: adamw
+  lr: 1.0e-3
+  schedule: warmup_cosine_decay
+  warmup_steps: 50_000
+  total_steps: 500_000
+  weight_decay: 0.01
+  clip_max_norm: null
+  T_ramp_ratio: 0.
+
+eval:
+  n_samples: 2048
+  batch_size: 256
+  data_seed: 104
+  task_seed: 105
+  noise_seed: 106
+  every: 50_000
+  eval_n_points: 64
+  task_centers:
+    - 0.
+    - 0.2
+    - 0.4
+    - 0.6
+    - 0.8
+    - 1.0
+    - 1.2
+    - 1.4
+    - 1.6
+    - 1.8
+    - 2.0
+    - 2.25
+    - 2.5
+    - 2.7
+    - 3.0
+    - 3.25
+    - 3.5
+    - 3.75
+    - 4.0
+
+# Hydra settings
+hydra:
+  mode: MULTIRUN
+  callbacks:
+    save_job_info:
+      _target_: hydra.experimental.callbacks.PickleJobInfoCallback
+  run:
+    dir: ${output_dir}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: ${output_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}
+  sweeper:
+    params:
+      add_seed: 1, 2, 3
+      task.distrib_param: 1.0, 1.5, 2.0, 2.5
+      training.lr: 2e-3, 1e-3
+      task.use_weights: false
+      # training.weight_decay: 0.01, 0.1, 0.5
+      # training.lr: 1e-3
+      # add_seed: 1
+      # task.n_tasks: 100_000
+
+

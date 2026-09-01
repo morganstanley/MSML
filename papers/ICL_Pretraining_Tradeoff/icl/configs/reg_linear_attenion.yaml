@@ -1,0 +1,81 @@
+dtype: float32
+output_dir: ./outputs
+log_level: INFO
+
+task:
+  name: noisy_linear_regression
+  n_tasks: 0
+  n_data: 0
+  n_dims: 4
+  n_points: 128
+  batch_size: 64
+  data_seed: 101
+  task_seed: 102
+  noise_seed: 103
+  data_scale: 1.0
+  task_scale: 1.0
+  noise_scale: 0.5
+  clip: null
+  use_weights: false
+  eval_ridge: false
+  distrib_name: student
+  distrib_param: .inf
+
+model:
+  name: transformer
+  n_points: 128
+  n_layer: 8
+  n_embd: 32
+  n_head: 8
+  seed: 100
+  use_ln: false
+  use_linear_attention: true
+
+training:
+  optimizer: adamw
+  lr: 2.0e-3
+  schedule: warmup_cosine_decay
+  warmup_steps: 40_000
+  total_steps: 400_000
+  weight_decay: 0.0
+
+eval:
+  n_samples: 2048
+  batch_size: 64
+  data_seed: 104
+  task_seed: 105
+  noise_seed: 106
+  every: 5_000
+  eval_n_points: 128
+  task_centers:
+    - 0.
+    - 0.25
+    - 0.5
+    - 0.75
+    - 1.0
+    - 1.25
+    - 1.5
+    - 1.75
+    - 2.0
+    - 2.25
+    - 2.5
+    - 2.75
+    - 3.0
+    - 3.25
+    - 3.5
+    - 3.75
+    - 4.0
+
+# Hydra settings
+hydra:
+  mode: MULTIRUN
+  run:
+    dir: ${output_dir}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: ${output_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}
+  sweeper:
+    params:
+      task.distrib_param: inf, 3.0, 5.0, 10.0
+      training.weight_decay: 0.0, 0.1, 0.5, 1.0
+      training.lr: 1e-3, 2e-3, 5e-3, 1e-2

@@ -1,0 +1,35 @@
+# Experiment artifacts
+outputs/
+multirun/
+wandb/
+*.safetensors
+*.ckpt
+checkpoints/
+
+# Hydra
+.hydra/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local agent config
+CLAUDE.md
+.claude/
