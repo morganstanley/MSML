@@ -23,6 +23,7 @@ See also: https://www.morganstanley.com/about-us/technology/machine-learning-res
 
 | Year | Venue | Title | Code |
 | ---- | ----- | ----- | ---- |
+| 2026 | TMLR | [Learning to Strategically Acquire Resources in Competition](https://arxiv.org/pdf/2606.06882) | [code](papers/Strategic_Resource_Acquisition/)
 | 2025 | ICML | [Privacy Amplification by Structured Subsampling for Deep Differentially Private Time Series Forecasting](https://arxiv.org/abs/2502.02410) | [code](papers/Deep_Differentially_Private_Time_Series_Forecasting) |
 | 2025 | TMLR | [Reweighting Improves Conditional Risk Bounds](https://arxiv.org/abs/2501.02353) | [code](papers/Reweighting_Improves_Conditional_Risk_Bounds) |
 | 2025 | AISTATS | [Variational Schrödinger Momentum Diffusion](https://arxiv.org/abs/2501.16675) | [code](papers/Variational_Schrodinger_Momentum_Diffusion) |
