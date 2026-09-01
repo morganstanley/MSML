@@ -1,4 +1,4 @@
-# Code for: <i>Learning to Strategically Acquire Resources in Competition</i>
+# Code for: Learning to Strategically Acquire Resources in Competition
 This paper provides a generalized game theory model for competitive resource acquisition, proves well-behaved equilibrium structure even under imperfect information, and studies when simultaneous learning dynamics converge to that equilibrium even without a common-knowledge prior. 
 
 Authors: [Safwan Hossain](https://safwanhossain.github.io/), [Mirah Shi](https://www.seas.upenn.edu/~mirahshi/), [Andrew Bennett](https://awbennett.net/), [Neil Chriss](https://en.wikipedia.org/wiki/Neil_Chriss), [Michael Kearns](https://www.cis.upenn.edu/~mkearns/), [Anderson Schneider](https://scholar.google.com/citations?user=KLyaFtUAAAAJ&hl=en), [Yuriy Nevmyvaka](https://scholar.google.com/citations?user=Hui4EIcAAAAJ&hl=en)
