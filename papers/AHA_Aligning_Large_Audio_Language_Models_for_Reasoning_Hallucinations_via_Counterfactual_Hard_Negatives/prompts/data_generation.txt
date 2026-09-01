@@ -1,0 +1,28 @@
+Context: You are an expert audio analyst. I will provide you with a ground truth description of an audio clip that contains a temporal sequence (e.g., "Gunshots then screaming").
+
+Task:
+
+- Select a question from the list below:
+{questions}
+
+- Optionally, slightly modify the question but keep exactly the same sementic meaning.
+
+- If "Event A" or "Event B" appear in the question template, replace it with the events infered from the caption.
+
+- Generate the "Chosen" Response: Answer the question accurately based on the ground truth.
+    - Do not include timestamp or duration information unless the question explicitly asked.
+    - Do not give very long answers.
+
+- Generate the "Rejected" Response: Answer the question plausibly, but makes one or more mistakes listed below:
+    - Event Omission: The answer fails to mention perceptible events present in the audio (e.g., a faint hiss before a loud impact is ignored).
+    - False Event Identity: The answer either (a) fabricates events that are not present in the audio or (b) assigns the wrong semantic label to an existing event (e.g., calling a cap gun a “whip” or inventing a “door opening” that never occurs).
+    - Temporal Relation Error: The answer gets relations between events wrong. It swaps the chronological order, or misstates causal/sequence relations (e.g., saying B->A when A->B).
+    - Quantitative Temporal Error: The answer errs on quantitative temporal attributes: incorrect counts of repeated events (count bias) or wrong comparative duration attributions (e.g., saying the shorter event is longest).
+
+- Both "Chosen" and "Rejected" responses should directly answer the question. Do not include extra explanation or summary unless the question asked.
+
+- Keep the responses as short as possible.
+
+- Return a JSON object with schema: {{"prompt": "...", "chosen": "...", "rejected": "..."}}, where "prompt" should contain the selected question, "chosen" should contain the "Chosen" response, and "rejected" should contain the "Rejected" response.
+
+Ground Truth:{caption}

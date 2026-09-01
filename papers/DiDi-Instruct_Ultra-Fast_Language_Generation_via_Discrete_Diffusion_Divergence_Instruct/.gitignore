@@ -1,0 +1,31 @@
+data/
+
+# Outputs / checkpoints
+outputs/
+checkpoints/
+_previous/
+*.ckpt
+
+# Logs / monitoring
+logs/
+*.log
+wandb/
+
+# Caches / python
+__pycache__/
+*.py[cod]
+.cache/
+
+# Env & editors
+.env
+.vscode/
+.idea/
+
+# Keep important files
+!README.md
+!LICENSE.md
+!configs/
+
+# local dev scripts
+scripts/backup_dev.sh
+scripts/nohup_didi_instruct.sh

@@ -23,8 +23,18 @@ See also: https://www.morganstanley.com/about-us/technology/machine-learning-res
 
 | Year | Venue | Title | Code |
 | ---- | ----- | ----- | ---- |
+| 2026 | ACL Findings | [AHA: Aligning Large Audio-Language Models for Reasoning Hallucinations via Counterfactual Hard Negatives](https://arxiv.org/abs/2512.24052) | [code](papers/AHA_Aligning_Large_Audio_Language_Models_for_Reasoning_Hallucinations_via_Counterfactual_Hard_Negatives) |
+| 2026 | COLM Workshop | [AriadneMem: Threading the Maze of Lifelong Memory for LLM Agents](https://arxiv.org/abs/2603.03290) | [code](papers/AriadneMem_Threading_the_Maze_of_Lifelong_Memory_for_LLM_Agents) |
+| 2026 | COLM Workshop | [Context Pruning for Coding Agents via Multi-Rubric Latent Reasoning](https://arxiv.org/abs/2605.15315) | [code](papers/Context_Pruning_for_Coding_Agents_via_Latent_Multi_Rubric_Reasoning) |
+| 2026 | CVPR | [LLaDA-MedV: Exploring Large Language Diffusion Models for Biomedical Image Understanding](https://arxiv.org/abs/2508.01617) | [code](papers/LLaDA-MedV_Exploring_large_language_diffusion_models_for_biomedical_image_understanding) |
+| 2026 | CVPR | [OTPrune: Distribution-Aligned Visual Token Pruning via Optimal Transport](https://arxiv.org/abs/2602.20205) | [code](papers/OTPrune_Distribution_Aligned_Visual_Token_Pruning_via_Optimal_Transport) |
+| 2026 | WACV | [Prompt-OT: An Optimal Transport Regularization Paradigm for Knowledge Preservation in Vision-Language Model Adaptation](https://arxiv.org/abs/2503.08906) | [code](papers/Prompt_OT_An_Optimal_Transport_Regularization) |
 | 2026 | ICML | [How Does the Pretraining Distribution Shape In-Context Learning? A Fundamental Trade-Off](https://arxiv.org/abs/2510.01163) | [code](papers/ICL_Pretraining_Tradeoff) |
 | 2026 | TMLR | [Learning to Strategically Acquire Resources in Competition](https://arxiv.org/pdf/2606.06882) | [code](papers/Strategic_Resource_Acquisition/)
+| 2026 | ICLR | [Improving Reasoning for Diffusion Language Models via Group Diffusion Policy Optimization](https://arxiv.org/abs/2510.08554) | [code](papers/GDPO_Improving_Reasoning_for_Diffusion_Language_Models_via_Group_Diffusion_Policy_Optimization) |
+| 2026 | ICLR | [Ultra-Fast Language Generation via Discrete Diffusion Divergence Instruct](https://arxiv.org/abs/2509.25035) | [code](papers/DiDi-Instruct_Ultra-Fast_Language_Generation_via_Discrete_Diffusion_Divergence_Instruct) |
+| 2026 | ICML | [Generalized Discrete Diffusion with Self-Correction](https://arxiv.org/abs/2603.02230) | [code](papers/SCDD_Generalized_Discrete_Diffusion_with_Self-Correction) |
+| 2025 | arXiv | [Chart-RVR: Reinforcement Learning with Verifiable Rewards for Explainable Chart Reasoning](https://arxiv.org/abs/2510.10973) | [code](papers/Chart-RVR_Reinforcement_Learning_with_Verifiable_Rewards_for_Explainable_Chart_Reasoning) |
 | 2025 | ICML | [Privacy Amplification by Structured Subsampling for Deep Differentially Private Time Series Forecasting](https://arxiv.org/abs/2502.02410) | [code](papers/Deep_Differentially_Private_Time_Series_Forecasting) |
 | 2025 | TMLR | [Reweighting Improves Conditional Risk Bounds](https://arxiv.org/abs/2501.02353) | [code](papers/Reweighting_Improves_Conditional_Risk_Bounds) |
 | 2025 | AISTATS | [Variational Schrödinger Momentum Diffusion](https://arxiv.org/abs/2501.16675) | [code](papers/Variational_Schrodinger_Momentum_Diffusion) |

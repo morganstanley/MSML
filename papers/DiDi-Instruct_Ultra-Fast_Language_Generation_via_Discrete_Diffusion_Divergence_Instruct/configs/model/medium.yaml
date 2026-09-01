@@ -1,0 +1,15 @@
+# DDiT Medium model
+# Approx. 424M parameters (more precise than "400M")
+# Checkpoint size: ~6.33 GB (6634504 KB)
+# hidden_size=1024, n_blocks=24, n_heads=16
+name: medium
+type: ddit
+hidden_size: 1024
+cond_dim: 128
+length: 1024
+n_blocks: 24
+n_heads: 16
+scale_by_sigma: True
+dropout: 0.1
+tie_word_embeddings: False
+vocab_lookup: True

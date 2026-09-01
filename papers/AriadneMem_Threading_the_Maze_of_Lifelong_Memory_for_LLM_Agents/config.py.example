@@ -1,0 +1,309 @@
+"""
+AriadneMem Configuration - System parameters and LLM settings
+
+Paper: AriadneMem: Threading the Maze of Lifelong Memory for LLM Agents
+
+IMPORTANT:
+1. Copy this file to config.py
+2. Configure your settings below
+3. Never commit config.py to version control (it contains your API key)
+"""
+
+# ============================================================================
+# LLM Configuration
+# ============================================================================
+
+# OpenAI API Key (required)
+# Get your key from: https://platform.openai.com/api-keys
+OPENAI_API_KEY = "your-api-key-here"
+
+# Custom OpenAI Base URL (optional)
+# Set to None to use default OpenAI endpoint
+# Examples:
+#   - Qwen/Alibaba: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+#   - Azure OpenAI: "https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT"
+#   - Local server: "http://localhost:8000/v1"
+#   - OpenAI (default): None
+OPENAI_BASE_URL = None
+
+# LLM Model name (default for all components)
+# Examples: "gpt-4.1-mini", "gpt-4.1", "qwen3-max", "qwen-plus-2025-07-28"
+LLM_MODEL = "gpt-4o"
+
+# Per-component model overrides (set to None to use LLM_MODEL)
+# Phase I: Memory Construction (extraction + coarsening) - can use cheaper/faster model
+BUILDER_LLM_MODEL = None       # e.g. "gpt-4.1-mini" for cost savings
+# Phase II: Answer Generation (topology-aware synthesis) - benefits from stronger model
+ANSWER_LLM_MODEL = None        # e.g. "gpt-4o" for better quality
+
+# Embedding model (local, no API needed)
+# Lightweight option (fast on CPU):
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DIMENSION = 384
+EMBEDDING_CONTEXT_LENGTH = 512
+
+# Better retrieval quality (GPU accelerates):
+# EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+# EMBEDDING_DIMENSION = 1024  # For Qwen3: up to 1024, supports 32-1024
+# EMBEDDING_CONTEXT_LENGTH = 32768  # Qwen3 supports 32k context
+
+
+# ============================================================================
+# Advanced LLM Features
+# ============================================================================
+
+# Enable deep thinking mode (for Qwen and compatible models)
+# Adds extra_body={"enable_thinking": True} to API calls
+# Set to False for OpenAI models (they don't support this)
+ENABLE_THINKING = False
+
+# Enable streaming responses (outputs content as it's generated)
+# Set to False for faster batch processing (recommended for memory building)
+USE_STREAMING = True
+
+# Enable JSON format mode (ensures LLM outputs valid JSON)
+# Adds response_format={"type": "json_object"} to API calls
+# Helps prevent parsing failures from extra text like ```json
+USE_JSON_FORMAT = True
+
+# Print full context sent to LLM for each answer. Set False to disable. Save with: 2>&1 | tee debug.log
+DEBUG_LLM_CONTEXT = True
+
+
+# ============================================================================
+# Memory Building Parameters
+# ============================================================================
+
+# Number of dialogues per window (for locomo; for other dataset, please finetune it)
+WINDOW_SIZE = 40
+
+# Window overlap size (for context continuity)
+OVERLAP_SIZE = 2
+
+
+# ============================================================================
+# AriadneMem Specific Parameters (Paper Section 2.2)
+# ============================================================================
+
+# Entropy-aware gating threshold (lambda_red in Eq. 3)
+# Lower = keep more info (better recall), Higher = more aggressive filtering
+REDUNDANCY_THRESHOLD = 0.6  # lambda_red: similarity threshold for redundancy check
+
+# Conflict-aware coarsening threshold (lambda_coal in Eq. 6)
+# Lower = keep more nodes, Higher = more aggressive merging
+COARSENING_THRESHOLD = 0.6  # lambda_coal: threshold for Merge vs Link decision
+
+# Enable/Disable feature flags (keep True for best performance)
+ENABLE_REDUNDANCY_CHECK = True   # Entropy-aware gating (Phi_gate)
+ENABLE_GRAPH_COARSENING = True   # Conflict-aware coarsening
+
+
+# ============================================================================
+# Retrieval Parameters
+# ============================================================================
+
+# Max entries returned by semantic search (vector similarity)
+# Lower = faster + less noise, Higher = better recall
+SEMANTIC_TOP_K = 25  # Reduced to avoid too many nodes
+
+# Max entries returned by keyword search (BM25 matching)
+KEYWORD_TOP_K = 5    # Keep small for precision
+
+# Max entries returned by structured search (metadata filtering)
+STRUCTURED_TOP_K = 5  # Increased from 5
+
+# ============================================================================
+# Reasoning Mode: "eco", "pro", or "custom"
+# ============================================================================
+# "eco"    - Fast & token-efficient: fewer paths, brief reasoning (1-2 sentences)
+# "pro"    - Thorough & detailed: more paths, deep reasoning (9-10 sentences)
+# "custom" - User-defined: set your own values below in CUSTOM_MODE_CONFIG
+REASONING_MODE = "eco"
+
+# Mode-specific parameters (auto-applied based on REASONING_MODE)
+MODE_CONFIGS = {
+    "eco": {
+        "MAX_REASONING_PATH_DEPTH": 3,
+        "MAX_REASONING_PATHS": 10,
+    },
+    "pro": {
+        "MAX_REASONING_PATH_DEPTH": 3,
+        "MAX_REASONING_PATHS": 25,
+    },
+    "custom": {
+        "MAX_REASONING_PATH_DEPTH": 3,   # Set your own depth
+        "MAX_REASONING_PATHS": 15,       # Set your own max paths
+    },
+}
+
+# Multi-hop path mining parameters (Paper Section 2.3, Eq. 10)
+# These are set automatically by REASONING_MODE above
+MAX_REASONING_PATH_DEPTH = MODE_CONFIGS[REASONING_MODE]["MAX_REASONING_PATH_DEPTH"]
+MAX_REASONING_PATHS = MODE_CONFIGS[REASONING_MODE]["MAX_REASONING_PATHS"]
+
+# ============================================================================
+# Database Configuration
+# ============================================================================
+
+# Path to LanceDB storage
+LANCEDB_PATH = "./ariadnemem_lancedb_data"
+
+# Memory table name
+MEMORY_TABLE_NAME = "ariadnemem_entries"
+
+
+# ============================================================================
+# Parallel Processing Configuration
+# ============================================================================
+
+# Memory Building Parallel Processing
+ENABLE_PARALLEL_PROCESSING = True
+MAX_PARALLEL_WORKERS = 16  # Number of parallel workers for memory building
+
+# Retrieval Parallel Processing  
+ENABLE_PARALLEL_RETRIEVAL = True
+MAX_RETRIEVAL_WORKERS = 8  # Number of parallel workers for retrieval queries
+
+
+
+# ============================================================================
+# LLM-as-Judge Configuration
+# ============================================================================
+
+# Judge LLM API Key (optional - if None, uses OPENAI_API_KEY)
+JUDGE_API_KEY = None
+
+# Judge LLM Base URL (optional - if None, uses OPENAI_BASE_URL)
+JUDGE_BASE_URL = None
+
+# Judge LLM Model (optional - if None, uses LLM_MODEL)
+JUDGE_MODEL = "gpt-4.1-mini"
+
+# Judge specific settings
+JUDGE_ENABLE_THINKING = False  # Usually false for evaluation tasks
+JUDGE_USE_STREAMING = False    # Usually false for evaluation
+JUDGE_TEMPERATURE = 0.3
+
+
+# ============================================================================
+# Answer Generation Prompt Templates
+# ============================================================================
+# Customize these templates to adjust how LLM generates answers
+# Available placeholders: {query}, {entity_hint}, {graph_hint}, {context_str}
+
+# System prompt for answer generation
+ANSWER_SYSTEM_PROMPT = """You are a QA system with graph-based memory. Analyze the graph structure, reason through the facts, then answer. Output JSON only."""
+
+# ---------- ECO mode template (1-2 sentences reasoning, token-efficient) ----------
+_ECO_USER_PROMPT_TEMPLATE = """Q: {query}
+{entity_hint}{graph_hint}
+{context_str}
+
+**STEP 1: GRAPH REASONING (1-2 sentences)**
+
+Analyze the graph facts and reasoning paths. Reference facts by their labels [F1], [F2], etc.
+- ATTRIBUTE: What specific fact directly answers this?
+- RELATIONSHIP: Trace entity connections (use [Reasoning Paths] if provided)
+- COUNT: List and count each occurrence
+- INFERENCE: What evidence supports/contradicts?
+- TEMPORAL: Note exact timestamp format from facts
+
+**STEP 2: ANSWER RULES (CRITICAL!)**
+
+**ANSWER LENGTH - MATCH QUESTION TYPE:**
+- "What is X's identity?" → ONLY the core identity (2-3 words max)
+  - Example: "Transgender woman" NOT "transgender single parent artist advocate"
+- "What does X like/do?" → 2-4 KEY items only, most relevant to question
+  - Example: "dinosaurs, nature" NOT "beach, camping, hiking, nature, swimming"
+- "What books/movies?" → Use EXACT quoted titles from facts
+  - Example: "Charlotte's Web" NOT "a book about friendship"
+- "When did X?" → Copy EXACT time expression from facts
+  - If facts say "the week before 9 June" → answer "The week before 9 June 2023"
+  - If facts say "2022" or "last year" → answer "2022"
+  - NEVER convert "the week before X" to date range like "2-8 June"
+
+**INFERENCE ANSWERS (Would/Could/Likely questions):**
+- If evidence is CLEAR: "Yes" or "No" (no explanation needed)
+- If evidence needs INFERENCE: "Likely yes; [1 reason from facts]" or "Likely no; [1 reason]"
+- Match the question's asking style
+
+**FORMAT RULES:**
+- Date: "DD Month YYYY" (NOT ISO format YYYY-MM-DD)
+- Lists: Comma-separated, 2-4 items max
+- Single answer: 1-5 words, exact from facts
+- Quotes: Keep original quotes around titles
+
+**BE CONCISE! Answer only what's asked, nothing extra.**
+
+Output JSON:
+{{
+  "reasoning": "1-2 sentences: cite [F1], [F2] etc. to show which facts answered this",
+  "answer": "concise exact answer"
+}}"""
+
+# ---------- PRO mode template (9-10 sentences reasoning, thorough analysis) ----------
+_PRO_USER_PROMPT_TEMPLATE = """Q: {query}
+{entity_hint}{graph_hint}
+{context_str}
+
+**STEP 1: DEEP GRAPH REASONING (9-10 sentences)**
+
+Perform a thorough multi-step analysis of the graph facts and reasoning paths.
+Reference facts by their labels [F1], [F2], etc. Your reasoning MUST cover ALL of the following:
+
+1. IDENTIFY the core question type (attribute, relationship, count, temporal, inference)
+2. LIST all directly relevant facts and explain why each matters
+3. TRACE entity connections through reasoning paths step by step
+4. CHECK for temporal ordering - which facts are newer/older and does order matter?
+5. DETECT any conflicts or state updates between facts (e.g., time changes, plan changes)
+6. RESOLVE conflicts by preferring the latest dated information
+7. VERIFY completeness - are there any gaps in the reasoning chain?
+8. CROSS-REFERENCE bridge connections if available - do inferred links add new evidence?
+9. SYNTHESIZE all evidence into a coherent conclusion
+10. STATE your confidence level and any caveats
+
+**STEP 2: ANSWER RULES (CRITICAL!)**
+
+**ANSWER LENGTH - MATCH QUESTION TYPE:**
+- "What is X's identity?" → ONLY the core identity (2-3 words max)
+  - Example: "Transgender woman" NOT "transgender single parent artist advocate"
+- "What does X like/do?" → 2-4 KEY items only, most relevant to question
+  - Example: "dinosaurs, nature" NOT "beach, camping, hiking, nature, swimming"
+- "What books/movies?" → Use EXACT quoted titles from facts
+  - Example: "Charlotte's Web" NOT "a book about friendship"
+- "When did X?" → Copy EXACT time expression from facts
+  - If facts say "the week before 9 June" → answer "The week before 9 June 2023"
+  - If facts say "2022" or "last year" → answer "2022"
+  - NEVER convert "the week before X" to date range like "2-8 June"
+
+**INFERENCE ANSWERS (Would/Could/Likely questions):**
+- If evidence is CLEAR: "Yes" or "No" (no explanation needed)
+- If evidence needs INFERENCE: "Likely yes; [1 reason from facts]" or "Likely no; [1 reason]"
+- Match the question's asking style
+
+**FORMAT RULES:**
+- Date: "DD Month YYYY" (NOT ISO format YYYY-MM-DD)
+- Lists: Comma-separated, 2-4 items max
+- Single answer: 1-5 words, exact from facts
+- Quotes: Keep original quotes around titles
+
+**The answer must be concise even though the reasoning is thorough.**
+
+Output JSON:
+{{
+  "reasoning": "9-10 sentences: thorough step-by-step analysis citing [F1], [F2] etc., covering evidence chain, conflicts, temporal order, and confidence",
+  "answer": "concise exact answer"
+}}"""
+
+# ---------- CUSTOM mode template (define your own) ----------
+# Only used when REASONING_MODE = "custom"
+# Copy from ECO or PRO above and modify as needed
+_CUSTOM_USER_PROMPT_TEMPLATE = None  # Set to a string to use, or None to fall back to ECO
+
+# ---------- Auto-select template based on REASONING_MODE ----------
+if REASONING_MODE == "pro":
+    ANSWER_USER_PROMPT_TEMPLATE = _PRO_USER_PROMPT_TEMPLATE
+elif REASONING_MODE == "custom" and _CUSTOM_USER_PROMPT_TEMPLATE:
+    ANSWER_USER_PROMPT_TEMPLATE = _CUSTOM_USER_PROMPT_TEMPLATE
+else:
+    ANSWER_USER_PROMPT_TEMPLATE = _ECO_USER_PROMPT_TEMPLATE

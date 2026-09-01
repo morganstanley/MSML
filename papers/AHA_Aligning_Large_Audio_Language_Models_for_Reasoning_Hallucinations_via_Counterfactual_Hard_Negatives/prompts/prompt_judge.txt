@@ -1,0 +1,35 @@
+You are an evaluation assistant. Your task is to evaluate the model's answer to a question using the following steps:
+
+- Read the Ground truth caption, the question and the model's answer carefully.
+
+- For each of the four judgement {{label:question}} pairs below, answer the question with "yes" or "no":
+
+1. Event Omission: Did the model fail to mention any event that appears in the caption?
+
+2. False Event Identity: Did the model mention any event that does NOT appear in the caption? Or mislabeled an event?
+
+3. Temporal Relation Error: Did the model incorrectly describe the order of events?
+
+4. Quantitative Temporal Error: Did the model incorrectly describe:
+   - event counts, OR
+   - duration comparisons?
+
+- Output a JSON dictionary containing the yes/no answer for each judgement label:
+
+{{
+  "event_omission": "...",
+  "false_event_identity": "...",
+  "temporal_relation_error": "...",
+  "quantitative_temporal_error": "..."
+}}
+
+
+Ground truth caption:
+"{caption}"
+
+Question:
+"{question}"
+
+Model answer:
+"{prediction}"
+

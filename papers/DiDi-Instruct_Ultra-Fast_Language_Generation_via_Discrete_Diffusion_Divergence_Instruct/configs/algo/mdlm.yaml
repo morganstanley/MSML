@@ -1,0 +1,9 @@
+name: mdlm
+backbone: dit
+parameterization: subs
+time_conditioning: False
+T: 0
+subs_masking: False
+causal_attention: False
+ignore_bos: False
+loss_type: elbo

@@ -1,0 +1,16 @@
+Qwen/Qwen2.5-Omni-7B:
+  model_id: Qwen/Qwen2.5-Omni-7B
+  processor_class: Qwen2_5OmniProcessor
+  model_class: Qwen2_5OmniThinkerForConditionalGeneration
+Qwen/Qwen3-Omni-30B-A3B-Thinking:
+  model_id: Qwen/Qwen3-Omni-30B-A3B-Thinking
+  processor_class: Qwen3OmniProcessor
+  model_class: Qwen3OmniMoeThinkerForConditionalGeneration
+moonshotai/Kimi-Audio-7B-Instruct:
+  model_id: moonshotai/Kimi-Audio-7B-Instruct
+  processor_class: KimiAudio
+  model_class: KimiAudio7BInstructForConditionalGeneration
+nvidia/audio-flamingo-3:
+  model_id: nvidia/audio-flamingo-3-hf
+  processor_class: AutoProcessor
+  model_class: AudioFlamingo3ForConditionalGeneration

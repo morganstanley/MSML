@@ -1,0 +1,107 @@
+Metadata-Version: 2.4
+Name: mini-swe-agent
+Version: 1.16.0
+Summary: Nano SWE Agent - A simple AI software engineering agent
+Author-email: Kilian Lieret <kilian.lieret@posteo.de>, "Carlos E. Jimenez" <carlosej@princeton.edu>
+License: MIT License
+        
+        Copyright (c) 2025 Kilian A. Lieret and Carlos E. Jimenez
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+Project-URL: Documentation, https://mini-swe-agent.com/latest/
+Project-URL: Repository, https://github.com/SWE-agent/mini-SWE-agent
+Project-URL: Bug Tracker, https://github.com/SWE-agent/mini-SWE-agent/issues
+Keywords: nlp,agents,code
+Classifier: Development Status :: 3 - Alpha
+Classifier: Operating System :: OS Independent
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3 :: Only
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE.md
+Requires-Dist: pyyaml
+Requires-Dist: requests
+Requires-Dist: jinja2
+Requires-Dist: litellm>=1.75.5
+Requires-Dist: tenacity
+Requires-Dist: rich
+Requires-Dist: python-dotenv
+Requires-Dist: typer
+Requires-Dist: platformdirs
+Requires-Dist: textual
+Requires-Dist: prompt_toolkit
+Requires-Dist: openai!=1.100.0,!=1.100.1
+Requires-Dist: datasets>=4.4.1
+Requires-Dist: transformers>=4.57.2
+Requires-Dist: pydantic>=2.12.4
+Provides-Extra: full
+Requires-Dist: mini-swe-agent[dev]; extra == "full"
+Requires-Dist: swe-rex>=1.4.0; extra == "full"
+Provides-Extra: dev
+Requires-Dist: datasets; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"
+Requires-Dist: pytest-xdist; extra == "dev"
+Requires-Dist: pre-commit; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: mkdocs-include-markdown-plugin; extra == "dev"
+Requires-Dist: mkdocstrings[python]>=0.18; extra == "dev"
+Requires-Dist: mike; extra == "dev"
+Requires-Dist: mkdocs-material; extra == "dev"
+Requires-Dist: mkdocs-glightbox; extra == "dev"
+Requires-Dist: mkdocs-redirects; extra == "dev"
+Dynamic: license-file
+
+## Install & Configure
+```bash
+uv sync
+```
+
+## Run Swebench
+We list our experiment configs in `templates` directory.
+You can run with the command:
+```
+mini-extra swebench --subset verified --split test --output runs/pruner --workers 8 -c ./templates/pruner.yaml
+```
+And don't forget to edit the `pruner.yaml` to give your api configuration and swe-pruner service configuration first.
+
+## Get results
+The result file structure is as same as the origin mini-swe-agent.
+
+## View statistics
+If you want to reproduce our results, we provide our analysis script `stats.py`, it might need some extra dependencies like plotly or scipy, just install if need.
+
+To view the single experiment statistics, you can run:
+```
+python stats.py main <traj_dir>
+```
+where `traj_dir` has structure like
+```
+trajs_dir
+├── astropy__astropy-12907
+├── astropy__astropy-13033
+```
+
+To compare pruner and baseline, run:
+```
+python stats.py compare trajs-mini-glm4.6 pruner-glm4.6 --label1 Baseline --label2 SWE-Pruner -p glm-comp.png
+```

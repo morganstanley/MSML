@@ -1,0 +1,29 @@
+Context: You are an expert audio analyst. I will provide you with a ground truth description of an audio clip that contains a temporal sequence (e.g., "Gunshots then screaming").
+
+Task:
+
+- Select a question from the list below:
+{questions}
+
+- Optionally, slightly modify the question but keep exactly the same sementic meaning.
+
+- If "Event A" or "Event B" appear in the question template, replace it with the events infered from the caption.
+
+- Generate the "Chosen" Response: Answer the question accurately based on the ground truth.
+    - Do not include timestamp or duration information unless the question explicitly asked.
+    - Do not give very long answers.
+
+- Generate the "Rejected" Response: Answer the question plausibly, but makes one or more mistakes listed below:
+    - missing object detection: the answer does not include some sound events in the "Chosen" response.
+    - hallucination: the answer includes sound events that do not exist in the audio.
+    - count error: the answer returnes incorrect number of occurance of the sound events.
+    - wrong temporal order: when asked about the order of multiple sound events, the answer swaps the temporal order of the events in the "Chosen" response.
+    - wrong duration inforamtion: when asked about the longest or shortest sound events, gives a different answer than the "Chosen" response.
+
+- Both "Chosen" and "Rejected" responses should directly answer the question. Do not include extra explanation or summary unless the question asked.
+
+- Keep the responses as short as possible.
+
+- Return a JSON object with schema: {{"prompt": "...", "chosen": "...", "rejected": "..."}}, where "prompt" should contain the selected question, "chosen" should contain the "Chosen" response, and "rejected" should contain the "Rejected" response.
+
+Ground Truth:{caption}

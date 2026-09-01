@@ -1,0 +1,74 @@
+# Discrete Diffusion Divergence Instruct (DiDi-Instruct)
+# Distillation configuration optimized for 2-step generation with discriminator-based reward.
+name: didi_instruct
+
+# ---- Model Architecture (must match the teacher model) ----
+backbone: dit
+parameterization: subs
+time_conditioning: False
+subs_masking: False
+causal_attention: False
+ignore_bos: False
+T: 0 # Continuous time
+
+# ---- Core Distillation Parameters ----
+num_samples_per_prompt: 8         # G: Number of samples per prompt for GRPO reward normalization.
+tau_mode: 'beta11'                # Sampling distribution for the intermediate timestep tau. Options: beta22, beta11, beta25, beta52, beta21, beta12, linear, square, cosine, arccos, mage
+remask_prob: 0.0                  # Probability of re-masking tokens after step 1.
+
+# ---- Discriminator Parameters ----
+discriminator_lr: 1e-6                # Learning rate for the discriminator.
+discriminator_unfreeze_blocks: 4      # Number of final transformer blocks to unfreeze and train in the discriminator.
+discriminator_warmup_steps: 0         # Steps to train only the discriminator before starting student updates.
+discriminator_only_warmup: True       # Whether to only train the discriminator during warmup steps.
+label_smoothing: 0.1                  # Label smoothing for discriminator loss to prevent overconfidence.
+discriminator_optim:
+  weight_decay: 0
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1e-8
+
+# ---- Student Regularization & Stability ----
+gradient_clip_val: 1.0            # Gradient clipping value for both optimizers.
+kl_beta: 0.05                     # NOT USED when student_num_steps = 2. See kl_hi_coef/kl_lo_coef below.
+entropy_beta: 0.0005              # Weight for entropy regularization on student logits to encourage diversity.
+student_update_every: 1           # Update student every N discriminator steps.
+sampling_eps: 0.02                # Epsilon for timestep sampling to avoid boundaries.
+
+# ---- Reward Shaping & Advantage Calculation ----
+reward_clip_val: 8.0              # Clip raw log-odds from discriminator to stabilize reward signal.
+advantage_clip_val: 3.0           # Clip the final normalized advantage to prevent extreme gradients.
+log_odds_eps: 1e-6                # Epsilon for stable log-odds calculation.
+
+# ---- Student Generation & EMA ----
+student_gen_temp: 1.0             # Temperature for student's N-step generation sampling.
+ema_beta: 0.999                   # Decay rate for the student EMA model (used for evaluation).
+
+# ---- Two-Step Generation Parameters (Active because student_num_steps = 2) ----
+# These are moved to 'two_step' logic or defaults in algo.py, removed here as they were misplaced at root.
+# kl_hi_coef, kl_lo_coef, t0_eps, logprob_mode, coupled_traj, unbiased, importance_weight, omega_from_alpha
+
+coupled_traj: true                # Whether to use coupled trajectory for reward calculation.
+unbiased: true                    # Whether to use unbiased log probability calculation.
+importance_weight: false          # Whether to use importance weighting with pi_tau.
+
+# --- Student Objective Weight Clipping ---
+omega_min: 0.1                    # Minimum value for the PG weight.
+omega_max: 10.0                   # Maximum value for the PG weight.
+
+# --- Guided Sampling Hyperparameters ---
+num_candidates: 4                 # Number of candidate samples for re-ranking in guided sampling.
+guidance_scale_start: 0.2         # Starting guidance scale for gradient tilting.
+guidance_scale_end: 1.0           # Ending guidance scale for multi-candidate re-ranking.
+rerank_steps_ratio: 0.5           # Ratio of steps to use re-ranking (e.g., 0.5 for the last 50%).
+
+# ---- Logging & Saving ----
+output_dir: "/your_output_dir/"   # Output directory for checkpoints and logs.
+print_every: 10                   # Print loss every N steps.
+save_after_n_steps: 200           # Save checkpoint every N steps.
+enable_progress_bar: False        # Whether to show progress bar during training.
+lr_scheduler:
+  name: cosine
+  warmup_steps: 1000
+  warmup_ratio: 0.1
+  min_lr: 1e-6

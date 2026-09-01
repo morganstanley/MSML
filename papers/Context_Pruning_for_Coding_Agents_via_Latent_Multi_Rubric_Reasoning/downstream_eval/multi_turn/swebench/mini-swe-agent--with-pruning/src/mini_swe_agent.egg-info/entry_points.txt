@@ -1,0 +1,6 @@
+[console_scripts]
+mini = minisweagent.run.mini:app
+mini-e = minisweagent.run.mini_extra:main
+mini-extra = minisweagent.run.mini_extra:main
+mini-stats = minisweagent.run.stats:app
+mini-swe-agent = minisweagent.run.mini:app

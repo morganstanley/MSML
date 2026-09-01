@@ -1,0 +1,6 @@
+train: lm1b
+valid: lm1b
+tokenizer_name_or_path: gpt2
+cache_dir: /path/to/data
+wrap: True
+streaming: False
