@@ -1,0 +1,41 @@
+{
+  "policy_version": "1",
+  "comment": "Default change-gate policy: what a proposed harness change must NOT hurt (guards) and what it MUST improve somewhere (improvements). Values are judged per paired cell (same task, same model, baseline vs candidate). Deployment-local: tighten/loosen tolerances or add registry metric ids for your team's bar; the gate stage refuses unknown ids loudly. 'source': 'referee' is the independent re-score (direction comes from the task); 'source': 'bench' reads the metric registry (direction declared here). on_missing: 'fail' makes an unevaluable guard fail the gate (use for the score — a candidate that lost its referee evidence must not pass); 'skip' reports it as not evaluable. Tolerances are how much WORSE the candidate may be before the guard trips; min_gain is how much BETTER it must be to count as the demonstrated improvement.",
+  "guards": [
+    {"id": "referee_best", "source": "referee",
+     "label": "final score (referee)", "tolerance_pct": 2.0,
+     "on_missing": "fail"},
+    {"id": "lifecycle.wall_hours", "source": "bench", "direction": "lower",
+     "label": "wall clock hours", "tolerance_pct": 15.0,
+     "on_missing": "skip"},
+    {"id": "efficiency.cost_usd", "source": "bench", "direction": "lower",
+     "label": "LLM cost USD", "tolerance_pct": 15.0, "on_missing": "skip"},
+    {"id": "reliability.execution_failures", "source": "bench",
+     "direction": "lower", "label": "failed experiments",
+     "tolerance_abs": 2, "on_missing": "skip"},
+    {"id": "lifecycle.scored_fraction", "source": "bench",
+     "direction": "higher", "label": "scored fraction",
+     "tolerance_pct": 10.0, "on_missing": "skip"},
+    {"id": "code.comment_share_overall", "source": "bench",
+     "direction": "higher", "label": "code comment share",
+     "tolerance_pct": 25.0, "on_missing": "skip"}
+  ],
+  "improvements": [
+    {"id": "referee_best", "source": "referee",
+     "label": "final score (referee)", "min_gain_pct": 1.0},
+    {"id": "lifecycle.wall_hours", "source": "bench", "direction": "lower",
+     "label": "wall clock hours", "min_gain_pct": 10.0},
+    {"id": "efficiency.cost_usd", "source": "bench", "direction": "lower",
+     "label": "LLM cost USD", "min_gain_pct": 10.0},
+    {"id": "reliability.execution_failures", "source": "bench",
+     "direction": "lower", "label": "failed experiments", "min_gain_abs": 2},
+    {"id": "search.time_to_best_hours", "source": "bench",
+     "direction": "lower", "label": "time to best result",
+     "min_gain_pct": 10.0},
+    {"id": "lifecycle.scored_fraction", "source": "bench",
+     "direction": "higher", "label": "scored fraction", "min_gain_pct": 5.0}
+  ],
+  "require_improvement": true,
+  "missing_candidate_cell": "fail",
+  "comment_missing_cell": "A candidate that no longer fields a run on a (task, model) cell the baseline covers has silently dropped coverage — that fails the gate unless set to 'skip'."
+}

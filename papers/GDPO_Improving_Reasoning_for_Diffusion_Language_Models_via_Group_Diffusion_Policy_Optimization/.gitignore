@@ -1,7 +1,0 @@
-*.pyc
-wandb/
-checkpoints/
-*.json
-slurm/
-*.pt
-.venv/

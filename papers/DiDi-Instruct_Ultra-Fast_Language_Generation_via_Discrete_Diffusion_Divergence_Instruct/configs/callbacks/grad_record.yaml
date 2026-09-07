@@ -1,3 +1,0 @@
-grad_record:
-  _target_: utils.GradientInspectionCallback
-  num_grads_log: 4

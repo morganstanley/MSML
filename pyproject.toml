@@ -1,0 +1,16 @@
+[project]
+name = "runcmp"
+version = "0.1.0"
+description = "Harness-neutral post-hoc comparison and LLM review of autonomous research runs"
+requires-python = ">=3.11"
+dependencies = ["openai>=1.0"]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.34"]
+bedrock = ["boto3>=1.34"]
+html = ["markdown>=3.5"]
+mlflow = ["mlflow>=2.12"]
+test = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["runcmp*"]

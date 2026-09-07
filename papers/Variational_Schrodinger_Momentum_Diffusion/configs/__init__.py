@@ -1,4 +1,0 @@
-from .default_checkerboard_config import get_checkerboard_default_configs
-from .default_spiral_config import get_spiral_default_configs
-from .default_gmm_config import get_gmm_default_configs
-

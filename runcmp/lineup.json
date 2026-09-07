@@ -1,0 +1,200 @@
+{
+  "schema": "runcmp-lineup-1",
+  "comment": "Declarative benchmark lineup. data_path values are DEPLOYMENT-LOCAL: point them at your site's copy of each dataset (the shipped values are placeholders or one site's locations). One entry per domain: how runs are recognized (detect tokens), what task the frameworks are given (task/data_path/framework_domains), and how the referee re-scores preserved evidence (referee spec). Adding a dataset = adding one entry; a new entry only needs code when it introduces a referee kind that does not exist yet (see referee.py DOMAIN_SPECS kinds).",
+  "domains": [
+    {
+      "id": "domain2",
+      "title": "LLM pretraining speedrun (bits/byte under a wall-clock budget)",
+      "detect": [
+        "domain2",
+        "d2_",
+        "_d2"
+      ],
+      "resource": "gpu",
+      "metric": {
+        "name": "val_bpb",
+        "lower_is_better": true
+      },
+      "referee": {
+        "builtin": true
+      },
+      "framework_domains": {
+        "cond": "llm_speedrun",
+        "msml": "llm_speedrun"
+      },
+      "status": "benchmarked"
+    },
+    {
+      "id": "domain4",
+      "title": "Traffic forecasting (RMSE on held-out horizons)",
+      "detect": [
+        "domain4",
+        "d4_",
+        "_d4"
+      ],
+      "resource": "cpu",
+      "metric": {
+        "name": "rmse",
+        "lower_is_better": true
+      },
+      "referee": {
+        "builtin": true
+      },
+      "framework_domains": {
+        "cond": "time_series",
+        "msml": "time_series"
+      },
+      "status": "benchmarked"
+    },
+    {
+      "id": "ibes",
+      "title": "IBES analyst-activity trading strategies (Sharpe, self-report verification only)",
+      "detect": [
+        "ibes"
+      ],
+      "resource": "cpu",
+      "metric": {
+        "name": "sharpe",
+        "lower_is_better": false
+      },
+      "referee": {
+        "builtin": true
+      },
+      "framework_domains": {
+        "cond": "time_series",
+        "msml": "time_series"
+      },
+      "status": "benchmarked"
+    },
+    {
+      "id": "d5_rfq",
+      "title": "ETF RFQ win/loss prediction (log-loss on a strictly later time slice)",
+      "detect": [
+        "d5_rfq",
+        "domain5_rfq",
+        "_rfq",
+        "rfqpred"
+      ],
+      "resource": "cpu",
+      "data_path": "<YOUR-SITE-DATA>/etf_rfq_research_dataset",
+      "metric": {
+        "name": "logloss",
+        "lower_is_better": true
+      },
+      "framework_domains": {
+        "cond": "time_series",
+        "msml": "tabular_classification"
+      },
+      "task": "Predict which ETF RFQs will be won and which will be lost, using only information available at the moment the RFQ arrives. rfqs.parquet has one row per RFQ: `status` is the outcome (W = won, L = lost). TIMESTAMP SEMANTICS (from the dataset README): `roTime`/`roTime_us` are FILL/resolution times, not arrival times \u2014 treat anything derived from them as unavailable when the RFQ arrives; arrival-time market state lives in `roArrivalPrice`/`arrival_mid`, and `date` is the trade date used for the train/holdout boundary. The data is noisy, so build strong benchmarks first and then beat them. Only out-of-sample results matter: every experiment must train on RFQs dated before 2025-10-01 and score every RFQ dated 2025-10-01 or later. Work extra hard verifying that no information leaks from the future or from the RFQ's own resolution. Take advantage of cross-client and cross-symbol information; the supplementary daily/intraday market data files can supply context features. EVIDENCE CONTRACT (mandatory for every scored experiment): write experiments/<name>/results/referee_predictions.parquet with exactly two columns, rfq_id (int) and p_win (float, calibrated probability that status=W), covering every holdout RFQ (date >= 2025-10-01); record the holdout log-loss as the experiment metric.",
+      "referee": {
+        "kind": "classification_table",
+        "pred_globs": [
+          "experiments/*/results/referee_predictions.parquet",
+          "experiments/*/results/referee_predictions.csv",
+          "experiments/*/results/*predictions*.parquet"
+        ],
+        "id_col": "rfq_id",
+        "prob_col": "p_win",
+        "truth": {
+          "path": "<YOUR-SITE-DATA>/etf_rfq_research_dataset/rfqs.parquet",
+          "id_col": "rfq_id",
+          "label_col": "status",
+          "positive": "W",
+          "holdout_col": "date",
+          "holdout_from": "2025-10-01"
+        },
+        "min_coverage": 0.95,
+        "metric": "logloss",
+        "secondary_metric": "auc",
+        "lower_is_better": true
+      },
+      "status": "adopted"
+    },
+    {
+      "id": "d6_cuda",
+      "title": "CUDA kernel optimization: fused GEMM+bias+GELU (correctness-gated TFLOP/s)",
+      "detect": [
+        "d6_cuda",
+        "domain6_cuda",
+        "_cuda",
+        "cudakernel"
+      ],
+      "resource": "gpu",
+      "data_path": "runcmp/tasks/d6_cuda",
+      "metric": {
+        "name": "tflops",
+        "lower_is_better": false
+      },
+      "framework_domains": {
+        "cond": "cuda_kernel",
+        "msml": "cuda_kernel"
+      },
+      "task": "Implement and iteratively optimize a fused kernel computing gelu(A @ B + bias) on a single A100: A is (4096, 4096) fp16, B is (4096, 4096) fp16, bias is (4096,) fp16, output fp16, accumulation in fp32. Any implementation technology available in the environment is allowed (Triton, CUDA C via torch load_inline, CUTLASS bindings, torch.compile) but the torch eager composition is the baseline to beat, not the answer. Correctness is a hard gate: on the fixed seeded inputs defined in TASK.md, the normalized elementwise error against the fp32 torch reference, err_norm = max(|out-ref| / (0.02 + 0.02*|ref|)), must be <= 1.0 (the eager baseline lands at ~0.06, so a correct kernel has ample headroom); a fast wrong kernel scores nothing. See tasks/d6_cuda/TASK.md for the exact timing protocol and the pinned FLOP convention (2*M*N*K per call). EVIDENCE CONTRACT (mandatory for every scored experiment): write experiments/<name>/results/kernel_report.json following the schema in TASK.md (task fingerprint, correctness block with err_norm, max_abs_err, atol and rtol, timing block with warmup/iters and the raw per-iteration millisecond samples); record achieved TFLOP/s as the experiment metric under the key tflops.",
+      "referee": {
+        "kind": "kernel_bench",
+        "pred_globs": [
+          "experiments/*/results/kernel_report.json"
+        ],
+        "flops_per_call": 137438953472,
+        "atol": 0.02,
+        "rtol": 0.02,
+        "expected_fingerprint": {
+          "op": "gemm_bias_gelu",
+          "m": 4096,
+          "n": 4096,
+          "k": 4096,
+          "dtype": "fp16"
+        },
+        "min_samples": 50,
+        "metric": "tflops",
+        "lower_is_better": false
+      },
+      "status": "adopted"
+    },
+    {
+      "id": "d7_payup",
+      "title": "Agency MBS payup prediction (face-weighted MAE on a frozen 2026-05..07 walk-forward holdout)",
+      "detect": [
+        "d7_payup",
+        "domain7_payup",
+        "_payup"
+      ],
+      "resource": "cpu",
+      "data_path": "<YOUR-SITE-DATA>/payup/dataFullNoDups.csv",
+      "metric": {
+        "name": "weighted_mae",
+        "lower_is_better": true
+      },
+      "framework_domains": {
+        "cond": "time_series",
+        "msml": "tabular_regression"
+      },
+      "task": "Predict the payup of agency MBS specified pools at bid time. The dataset is a single CSV of dealer bid records: one row per quote, `Date` is the quote date, `payup` is the target, `curr_face` is the position size used as the evaluation weight. STRICT FEATURE RULES: any column may be used as a feature EXCEPT `payup` (the target) and `price` (forbidden outright). STRICT TIME DISCIPLINE: this is walk-forward prediction - a prediction for quote date D may use only rows with Date earlier than D (no forward-looking joins, aggregates, or fits; watch for the second lowercase `date` column, which is a different field, not the quote date). THE ONLY METRIC: mean_absolute_error(y_true=payup, y_pred=pred, sample_weight=curr_face), computed over all holdout rows; lower is better. HOLDOUT: every row with Date from 2026-05-01 through 2026-07-31 inclusive (63 quote dates); rows before 2026-05-01 are training territory. A production ML system already prices these bids daily; treat beating it as the real goal, strong tree-ensemble baselines as the floor. EVIDENCE CONTRACT (mandatory for every scored experiment): write experiments/<name>/results/referee_predictions.parquet with exactly four columns - Date (YYYY-MM-DD string), bid_id (int), cusip (string), pred (float) - containing one prediction per distinct (Date, bid_id, cusip) key of the holdout slice (the referee expands each key prediction over all matching rows and computes the row-level weighted MAE); record that weighted MAE as the experiment metric.",
+      "referee": {
+        "kind": "regression_table",
+        "pred_globs": [
+          "experiments/*/results/referee_predictions.parquet",
+          "experiments/*/results/referee_predictions.csv"
+        ],
+        "pred_col": "pred",
+        "truth": {
+          "path": "<YOUR-SITE-DATA>/payup/dataFullNoDups.csv",
+          "id_cols": [
+            "Date",
+            "bid_id",
+            "cusip"
+          ],
+          "target_col": "payup",
+          "weight_col": "curr_face",
+          "holdout_col": "Date",
+          "holdout_from": "2026-05-01",
+          "holdout_to": "2026-07-31"
+        },
+        "min_coverage": 0.95,
+        "metric": "weighted_mae",
+        "lower_is_better": true
+      },
+      "status": "adopted"
+    }
+  ]
+}

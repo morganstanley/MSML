@@ -1,0 +1,1535 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REPORT — team_opus</title>
+<style>
+:root { color-scheme: light dark; }
+body { max-width: 62rem; margin: 2rem auto; padding: 0 1.5rem;
+       font: 16px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
+       color: #1a1a1a; background: #fff; }
+h1, h2, h3 { line-height: 1.25; margin-top: 2rem; }
+h1 { font-size: 1.9rem; border-bottom: 2px solid #ddd; padding-bottom: .4rem; }
+h2 { font-size: 1.4rem; border-bottom: 1px solid #eee; padding-bottom: .3rem; }
+code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+       font-size: .87em; background: #f4f4f4; padding: .1em .3em;
+       border-radius: 3px; }
+pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .82rem; line-height: 1.35; background: #f7f7f7;
+      border: 1px solid #e2e2e2; border-radius: 5px; padding: .9rem 1.1rem;
+      overflow-x: auto; white-space: pre; }
+pre code { background: none; padding: 0; font-size: inherit; }
+table { border-collapse: collapse; margin: 1.2rem 0; font-size: .93rem;
+        display: block; overflow-x: auto; max-width: 100%; }
+th, td { border: 1px solid #ddd; padding: .4rem .6rem; text-align: left; }
+th { background: #f2f2f2; font-weight: 600; }
+tr:nth-child(even) td { background: #fafafa; }
+blockquote { border-left: 3px solid #ccc; margin-left: 0; padding-left: 1rem;
+             color: #555; }
+a { color: #0b5fff; }
+.chart { margin: 1.2rem 0; }
+.chart-title { font-weight: 600; margin-bottom: .5rem; font-size: .95rem; }
+.chart-row { display: flex; align-items: center; gap: .6rem; margin: .22rem 0; }
+.chart-label { flex: 0 0 16rem; text-align: right; font-size: .85rem;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chart-track { flex: 1 1 auto; background: #f0f0f0; border-radius: 3px;
+               height: 1.05rem; overflow: hidden; }
+.chart-bar { height: 100%; border-radius: 3px; }
+.chart-value { flex: 0 0 11rem; font-size: .85rem;
+               font-family: ui-monospace, Menlo, Consolas, monospace; }
+.chart-note { color: #777; font-family: -apple-system, sans-serif; }
+.chart-svg { width: 100%; max-width: 46rem; height: auto; display: block;
+             margin: .3rem 0; }
+.chart-svg .grid { stroke: #ececec; stroke-width: 1; }
+.chart-svg .frame { fill: none; stroke: #ccc; stroke-width: 1; }
+.chart-svg .tick { font: 11px ui-monospace, Menlo, monospace; fill: #666; }
+.chart-svg .axis { font: 12px -apple-system, sans-serif; fill: #444; }
+.chart-svg .legend { font: 12px -apple-system, sans-serif; }
+.chart-svg .ptlabel { font: 10px -apple-system, sans-serif; fill: #555; }
+.stack-track { flex: 1 1 auto; display: flex; height: 1.3rem;
+               border-radius: 3px; overflow: hidden; }
+.stack-seg { height: 100%; font: 10px ui-monospace, monospace; color: #fff;
+             text-align: center; line-height: 1.3rem; overflow: hidden;
+             white-space: nowrap; }
+.stack-legend { margin: .35rem 0 0 16rem; font-size: .82rem; }
+.stack-legend .legend { margin-right: .9rem; }
+.chart-group { margin: .55rem 0; }
+.chart-label.group { flex: none; text-align: left; font-weight: 600;
+                     font-size: .88rem; margin-bottom: .15rem; }
+.grouped-row .chart-sublabel { flex: 0 0 12rem; text-align: right;
+                               font-size: .8rem; color: #666;
+                               white-space: nowrap; overflow: hidden; }
+table.heatmap { border-collapse: collapse; font-size: .85rem;
+                display: table; }
+table.heatmap th, table.heatmap td { border: 1px solid #e6e6e6;
+                padding: .3rem .55rem; text-align: right;
+                font-family: ui-monospace, Menlo, monospace; }
+table.heatmap thead th { background: #f2f2f2;
+                font-family: -apple-system, sans-serif; }
+table.heatmap tbody th { text-align: left; background: #f9f9f9;
+                font-family: -apple-system, sans-serif; font-weight: 500; }
+@media (prefers-color-scheme: dark) {
+  body { color: #e4e4e4; background: #1c1c1e; }
+  h1 { border-bottom-color: #3a3a3c; } h2 { border-bottom-color: #2c2c2e; }
+  code { background: #2c2c2e; } pre { background: #242426; border-color: #3a3a3c; }
+  th { background: #2c2c2e; } th, td { border-color: #3a3a3c; }
+  tr:nth-child(even) td { background: #202022; }
+  blockquote { border-left-color: #48484a; color: #a1a1a6; }
+  a { color: #5aa0ff; }
+  .chart-track { background: #2c2c2e; }
+  .chart-note { color: #98989d; }
+}
+</style>
+</head><body>
+<h1 id="which-harness-which-model-which-pairing-verdicts-from-41-preserved-runs">Which harness, which model, which pairing — verdicts from 41 preserved runs</h1>
+<p><strong>Corpus as it actually exists.</strong> 41 runs, two harnesses (<code>cond</code> 21 runs, <code>msml</code> 20), three models (glm-5.2 22 runs, kimi-k3 11, deepseek-v4-flash 8), four tasks, four campaign eras. The referee could compare 16 of 20 same-model pairs; domain2's four pairs are <strong>not</strong> comparable (each run validates on its own held-out slice), so domain2 contributes process evidence only. Missing permutations are data, not noise: there is <strong>no deepseek cell at all in d5_rfq or domain2</strong>, <strong>no kimi cell in the reasonfix era</strong> (by design — kimi is the era control), and <strong>no msml run for kimi + domain4 + vary</strong>, because that cell failed four times and never produced a run of record. Everything below is scaled to what exists.</p>
+<hr />
+<h2 id="1-headline-verdicts">1. Headline verdicts</h2>
+<p><strong>Harness — <code>cond</code>, but conditionally.</strong> cond wins the referee's comparable identity in 11 of 16 pairs, and the win is not evenly spread:</p>
+<table>
+<thead>
+<tr>
+<th>task</th>
+<th>comparable pairs</th>
+<th>cond wins</th>
+<th>margin vs that task's replication noise</th>
+<th>verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>d5_rfq</td>
+<td>3</td>
+<td><strong>3</strong></td>
+<td>1.12x, 1.70x, 2.01x of median noise</td>
+<td><strong>decisive</strong></td>
+</tr>
+<tr>
+<td>d7_payup</td>
+<td>7</td>
+<td><strong>5</strong></td>
+<td>0.17x-2.01x of a 41% noise floor</td>
+<td><strong>narrow, on balance cond</strong></td>
+</tr>
+<tr>
+<td>domain4</td>
+<td>6</td>
+<td>3</td>
+<td>0.01x-2.70x, four of six below 0.5x</td>
+<td><strong>coin flip</strong></td>
+</tr>
+<tr>
+<td>domain2</td>
+<td>0 comparable (4 pairs, all incomparable)</td>
+<td>—</td>
+<td>—</td>
+<td><strong>no quality verdict possible</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The decisive part of cond's case is not the metric — it is process, and process measures <em>are</em> cross-harness comparable: cond needed <strong>1.24 attempts per cell vs msml's 2.05</strong>; <strong>24% vs 50%</strong> of its scored rows misstate their own metric by more than 1% (median deviation 3.3e-07 vs 1.08e-02); <strong>2 vs 40</strong> rows finished as <code>done</code> while carrying an error; and it produces roughly <strong>twice the code and documentation per experiment</strong>.</p>
+<p><strong>The big caveat, and it is the most important finding in this report.</strong> Which harness wins flips with whether the model gets its own prior reasoning back. cond won <strong>9 of 9</strong> pairs where both sides replayed reasoning traces and only <strong>2 of 7</strong> where both sides were blind (one-sided Fisher p = 0.0048). All seven blind pairs are pre-2026-08-07 GLM/deepseek cells; the replayed set includes four kimi pairs from three <em>earlier</em> eras, so this is not simply "the good evening". On a serving path that does not return traces, this corpus gives cond no edge and msml the majority of wins.</p>
+<p><strong>Model — kimi-k3 for quality, glm-5.2 for turnaround.</strong> On referee-normalised quality (run best ÷ best value any run achieved on that task), medians are kimi 1.028 (10 scored runs), glm 1.076 (21), deepseek 1.088 (8). kimi holds the corpus best on domain2 (0.78205) and domain4 (0.021847); glm is best on d5_rfq (1.000/1.026) and clearly worst on d7_payup (1.427-2.193); deepseek holds the corpus-best d7 result (2.779368). kimi's price is clock time — registry <code>lifecycle.wall_hours</code> median <strong>18.76 h</strong> across its 11 runs (range 5.4-31.83) versus glm 4.78 h (3.35-17.16) and deepseek 4.28 h (1.73-8.89) — at a <em>lower</em> median token spend (56.9M vs glm 98.3M).</p>
+<p><strong>Per-seat model choice cannot be answered from this corpus.</strong> All 41 runs used exactly one model in every agent transcript (cond pins <code>conductor_model</code> to the run model; msml pins only an external <code>web_search_model</code>). The campaign's archived-attempt list even contains an <code>aborted_mixedmodels</code> directory. Any per-seat recommendation here would be invention.</p>
+<p><strong>Combination to run today</strong> (registry <code>search.time_to_best_hours</code> / <code>lifecycle.wall_hours</code> of the winning run in brackets):</p>
+<table>
+<thead>
+<tr>
+<th>task</th>
+<th>run this</th>
+<th>margin</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>d5_rfq</td>
+<td><strong>cond + glm-5.2</strong> — corpus best 0.322081 (<code>d5r_glm_cond</code>: time_to_best_hours=2.24, wall_hours=3.95)</td>
+<td>decisive vs msml, narrow vs cond+kimi</td>
+</tr>
+<tr>
+<td>d7_payup</td>
+<td><strong>cond + deepseek-v4-flash</strong> — corpus best 2.779368 (<code>d7r_dsv4_cond</code>: time_to_best_hours=1.02, wall_hours=3.94); cond+kimi close behind at 2.862204 (<code>d7v_k3_cond</code>: time_to_best_hours=4.47, wall_hours=17.23)</td>
+<td>narrow — the task's own repeat spread is 41%</td>
+</tr>
+<tr>
+<td>domain4</td>
+<td><strong>cond + kimi-k3</strong> — corpus best 0.021847 (<code>d4_k3_cond_direct</code>: time_to_best_hours=10.82, wall_hours=18.76)</td>
+<td>coin flip vs msml+kimi (0.021862, a 0.07% gap)</td>
+</tr>
+<tr>
+<td>domain2</td>
+<td><strong>cond + kimi-k3</strong> — lowest recomputed value 0.78205 (<code>d2v_k3_cond</code>: time_to_best_hours=9.98, wall_hours=19.71)</td>
+<td>no cross-harness identity exists; within-run evidence only</td>
+</tr>
+</tbody>
+</table>
+<p>It is task-dependent, and what drives the flip is <strong>the model, not the harness</strong>: cond is the better harness in every task where a verdict exists, while the best model changes with the task (glm on tabular classification, kimi on the two forecasting/pretraining tasks, deepseek on payups).</p>
+<hr />
+<h2 id="2-the-registry-numbers-behind-the-timing-claims">2. The registry numbers behind the timing claims</h2>
+<p>Every timing statement in this report is anchored to these published per-run registry values (<code>search.time_to_best_hours</code>, <code>lifecycle.wall_hours</code>, <code>search.median_queue_wait_minutes</code>). All 41 runs, nothing excluded; <code>d7_payup_glm_cond</code> has no time-to-best value in the registry.</p>
+<table>
+<thead>
+<tr>
+<th>run</th>
+<th>task</th>
+<th>harness</th>
+<th>model</th>
+<th>time_to_best_hours</th>
+<th>wall_hours</th>
+<th>median_queue_wait_minutes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>d5r_glm_cond</td>
+<td>d5_rfq</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>2.24</td>
+<td>3.95</td>
+<td>10.5</td>
+</tr>
+<tr>
+<td>d5v_glm_cond</td>
+<td>d5_rfq</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>1.41</td>
+<td>3.82</td>
+<td>7.0</td>
+</tr>
+<tr>
+<td>d5v_k3_cond</td>
+<td>d5_rfq</td>
+<td>cond</td>
+<td>kimi-k3</td>
+<td>22.96</td>
+<td>31.83</td>
+<td>183.0</td>
+</tr>
+<tr>
+<td>d5r_glm_msml</td>
+<td>d5_rfq</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>2.16</td>
+<td>4.73</td>
+<td>8.8</td>
+</tr>
+<tr>
+<td>d5v_glm_msml</td>
+<td>d5_rfq</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>1.31</td>
+<td>4.83</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>d5v_k3_msml</td>
+<td>d5_rfq</td>
+<td>msml</td>
+<td>kimi-k3</td>
+<td>9.36</td>
+<td>17.55</td>
+<td>78.0</td>
+</tr>
+<tr>
+<td>d7_payup_dsv4_cond</td>
+<td>d7_payup</td>
+<td>cond</td>
+<td>deepseek-v4-flash</td>
+<td>0.67</td>
+<td>2.21</td>
+<td>11.7</td>
+</tr>
+<tr>
+<td>d7r_dsv4_cond</td>
+<td>d7_payup</td>
+<td>cond</td>
+<td>deepseek-v4-flash</td>
+<td>1.02</td>
+<td>3.94</td>
+<td>5.4</td>
+</tr>
+<tr>
+<td>d7_payup_glm_cond</td>
+<td>d7_payup</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>(none)</td>
+<td>3.7</td>
+<td>7.4</td>
+</tr>
+<tr>
+<td>d7r_glm_cond</td>
+<td>d7_payup</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>1.49</td>
+<td>3.68</td>
+<td>37.5</td>
+</tr>
+<tr>
+<td>d7v_glm_cond</td>
+<td>d7_payup</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>0.6</td>
+<td>3.61</td>
+<td>32.0</td>
+</tr>
+<tr>
+<td>d7_payup_k3_cond</td>
+<td>d7_payup</td>
+<td>cond</td>
+<td>kimi-k3</td>
+<td>1.48</td>
+<td>6.58</td>
+<td>70.9</td>
+</tr>
+<tr>
+<td>d7v_k3_cond</td>
+<td>d7_payup</td>
+<td>cond</td>
+<td>kimi-k3</td>
+<td>4.47</td>
+<td>17.23</td>
+<td>151.3</td>
+</tr>
+<tr>
+<td>d7_payup_dsv4_msml</td>
+<td>d7_payup</td>
+<td>msml</td>
+<td>deepseek-v4-flash</td>
+<td>1.26</td>
+<td>6.54</td>
+<td>55.0</td>
+</tr>
+<tr>
+<td>d7r_dsv4_msml</td>
+<td>d7_payup</td>
+<td>msml</td>
+<td>deepseek-v4-flash</td>
+<td>0.78</td>
+<td>4.29</td>
+<td>35.5</td>
+</tr>
+<tr>
+<td>d7_payup_glm_msml</td>
+<td>d7_payup</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>0.15</td>
+<td>4.12</td>
+<td>5.8</td>
+</tr>
+<tr>
+<td>d7r_glm_msml</td>
+<td>d7_payup</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>0.78</td>
+<td>4.18</td>
+<td>9.8</td>
+</tr>
+<tr>
+<td>d7v_glm_msml</td>
+<td>d7_payup</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>0.99</td>
+<td>4.06</td>
+<td>13.9</td>
+</tr>
+<tr>
+<td>d7_payup_k3_msml</td>
+<td>d7_payup</td>
+<td>msml</td>
+<td>kimi-k3</td>
+<td>1.44</td>
+<td>5.4</td>
+<td>28.8</td>
+</tr>
+<tr>
+<td>d7v_k3_msml</td>
+<td>d7_payup</td>
+<td>msml</td>
+<td>kimi-k3</td>
+<td>6.68</td>
+<td>14.08</td>
+<td>68.8</td>
+</tr>
+<tr>
+<td>d2_glm_cond</td>
+<td>domain2</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>12.77</td>
+<td>17.16</td>
+<td>48.6</td>
+</tr>
+<tr>
+<td>d2r_glm_cond</td>
+<td>domain2</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>5.41</td>
+<td>8.1</td>
+<td>169.7</td>
+</tr>
+<tr>
+<td>d2v_glm_cond</td>
+<td>domain2</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>5.31</td>
+<td>12.71</td>
+<td>0.0</td>
+</tr>
+<tr>
+<td>d2v_k3_cond</td>
+<td>domain2</td>
+<td>cond</td>
+<td>kimi-k3</td>
+<td>9.98</td>
+<td>19.71</td>
+<td>198.2</td>
+</tr>
+<tr>
+<td>d2_glm_msml</td>
+<td>domain2</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>1.96</td>
+<td>7.91</td>
+<td>7.0</td>
+</tr>
+<tr>
+<td>d2r_glm_msml</td>
+<td>domain2</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>2.62</td>
+<td>5.66</td>
+<td>10.4</td>
+</tr>
+<tr>
+<td>d2v_glm_msml</td>
+<td>domain2</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>2.43</td>
+<td>13.23</td>
+<td>6.4</td>
+</tr>
+<tr>
+<td>d2v_k3_msml</td>
+<td>domain2</td>
+<td>msml</td>
+<td>kimi-k3</td>
+<td>6.67</td>
+<td>20.87</td>
+<td>86.0</td>
+</tr>
+<tr>
+<td>d4_dsv4_cond_direct</td>
+<td>domain4</td>
+<td>cond</td>
+<td>deepseek-v4-flash</td>
+<td>3.51</td>
+<td>8.89</td>
+<td>256.3</td>
+</tr>
+<tr>
+<td>d4r_dsv4_cond</td>
+<td>domain4</td>
+<td>cond</td>
+<td>deepseek-v4-flash</td>
+<td>3.15</td>
+<td>7.16</td>
+<td>222.9</td>
+</tr>
+<tr>
+<td>d4_glm_cond_direct</td>
+<td>domain4</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>2.63</td>
+<td>5.34</td>
+<td>99.5</td>
+</tr>
+<tr>
+<td>d4r_glm_cond</td>
+<td>domain4</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>0.97</td>
+<td>6.17</td>
+<td>70.9</td>
+</tr>
+<tr>
+<td>d4v_glm_cond</td>
+<td>domain4</td>
+<td>cond</td>
+<td>glm-5.2</td>
+<td>1.38</td>
+<td>4.57</td>
+<td>50.2</td>
+</tr>
+<tr>
+<td>d4_k3_cond_direct</td>
+<td>domain4</td>
+<td>cond</td>
+<td>kimi-k3</td>
+<td>10.82</td>
+<td>18.76</td>
+<td>254.4</td>
+</tr>
+<tr>
+<td>d4v_k3_cond</td>
+<td>domain4</td>
+<td>cond</td>
+<td>kimi-k3</td>
+<td>11.51</td>
+<td>21.56</td>
+<td>199.1</td>
+</tr>
+<tr>
+<td>d4_dsv4_msml_direct</td>
+<td>domain4</td>
+<td>msml</td>
+<td>deepseek-v4-flash</td>
+<td>0.51</td>
+<td>4.26</td>
+<td>12.2</td>
+</tr>
+<tr>
+<td>d4r_dsv4_msml</td>
+<td>domain4</td>
+<td>msml</td>
+<td>deepseek-v4-flash</td>
+<td>1.0</td>
+<td>1.73</td>
+<td>9.4</td>
+</tr>
+<tr>
+<td>d4_glm_msml_direct</td>
+<td>domain4</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>1.58</td>
+<td>7.44</td>
+<td>13.1</td>
+</tr>
+<tr>
+<td>d4r_glm_msml</td>
+<td>domain4</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>1.43</td>
+<td>3.35</td>
+<td>14.8</td>
+</tr>
+<tr>
+<td>d4v_glm_msml</td>
+<td>domain4</td>
+<td>msml</td>
+<td>glm-5.2</td>
+<td>2.81</td>
+<td>5.14</td>
+<td>17.4</td>
+</tr>
+<tr>
+<td>d4_k3_msml_direct</td>
+<td>domain4</td>
+<td>msml</td>
+<td>kimi-k3</td>
+<td>18.19</td>
+<td>24.44</td>
+<td>136.5</td>
+</tr>
+</tbody>
+</table>
+<p>Medians of those registry values, computed over all runs of each harness (my aggregate, definition: median of per-run registry values, every run counted once): queue wait <strong>cond 70.9 / msml 13.5</strong> minutes; tokens per run cond 103.4M / msml 67.3M.</p>
+<div class="chart">
+<div class="chart-title">Registry median_queue_wait_minutes — the twelve longest-queueing runs (lower is better; all twelve are cond)</div>
+<div class="chart-row"><div class="chart-label">d4_dsv4_cond_direct</div><div class="chart-track"><div class="chart-bar" style="width:100.0%;background:#4c78a8"></div></div><div class="chart-value">256.3 <span class="chart-note">cond, domain4</span></div></div>
+<div class="chart-row"><div class="chart-label">d4_k3_cond_direct</div><div class="chart-track"><div class="chart-bar" style="width:99.3%;background:#f58518"></div></div><div class="chart-value">254.4 <span class="chart-note">cond, domain4</span></div></div>
+<div class="chart-row"><div class="chart-label">d4r_dsv4_cond</div><div class="chart-track"><div class="chart-bar" style="width:87.0%;background:#54a24b"></div></div><div class="chart-value">222.9 <span class="chart-note">cond, domain4</span></div></div>
+<div class="chart-row"><div class="chart-label">d4v_k3_cond</div><div class="chart-track"><div class="chart-bar" style="width:77.7%;background:#e45756"></div></div><div class="chart-value">199.1 <span class="chart-note">cond, domain4</span></div></div>
+<div class="chart-row"><div class="chart-label">d2v_k3_cond</div><div class="chart-track"><div class="chart-bar" style="width:77.3%;background:#72b7b2"></div></div><div class="chart-value">198.2 <span class="chart-note">cond, domain2</span></div></div>
+<div class="chart-row"><div class="chart-label">d5v_k3_cond</div><div class="chart-track"><div class="chart-bar" style="width:71.4%;background:#eeca3b"></div></div><div class="chart-value">183.0 <span class="chart-note">cond, d5_rfq</span></div></div>
+<div class="chart-row"><div class="chart-label">d2r_glm_cond</div><div class="chart-track"><div class="chart-bar" style="width:66.2%;background:#b279a2"></div></div><div class="chart-value">169.7 <span class="chart-note">cond, domain2</span></div></div>
+<div class="chart-row"><div class="chart-label">d7v_k3_cond</div><div class="chart-track"><div class="chart-bar" style="width:59.0%;background:#9d755d"></div></div><div class="chart-value">151.3 <span class="chart-note">cond, d7_payup</span></div></div>
+<div class="chart-row"><div class="chart-label">d4_glm_cond_direct</div><div class="chart-track"><div class="chart-bar" style="width:38.8%;background:#4c78a8"></div></div><div class="chart-value">99.5 <span class="chart-note">cond, domain4</span></div></div>
+<div class="chart-row"><div class="chart-label">d4r_glm_cond</div><div class="chart-track"><div class="chart-bar" style="width:27.7%;background:#f58518"></div></div><div class="chart-value">70.9 <span class="chart-note">cond, domain4</span></div></div>
+<div class="chart-row"><div class="chart-label">d7_payup_k3_cond</div><div class="chart-track"><div class="chart-bar" style="width:27.7%;background:#54a24b"></div></div><div class="chart-value">70.9 <span class="chart-note">cond, d7_payup</span></div></div>
+<div class="chart-row"><div class="chart-label">d4v_glm_cond</div><div class="chart-track"><div class="chart-bar" style="width:19.6%;background:#e45756"></div></div><div class="chart-value">50.2 <span class="chart-note">cond, domain4</span></div></div>
+</div>
+
+<p>msml's highest value anywhere is 136.5 (<code>d4_k3_msml_direct</code>); its median is 13.5.</p>
+<hr />
+<h2 id="3-what-the-numbers-look-like">3. What the numbers look like</h2>
+<h3 id="every-comparable-pair-margin-expressed-in-units-of-its-tasks-replication-noise">Every comparable pair, margin expressed in units of its task's replication noise</h3>
+<div class="chart">
+<div class="chart-title">Referee margin ÷ task median within-cell replication range (higher = more trustworthy win; label names the winner)</div>
+<div class="chart-row"><div class="chart-label">d5_rfq glm vary — cond</div><div class="chart-track"><div class="chart-bar" style="width:74.4%;background:#4c78a8"></div></div><div class="chart-value">2.01 <span class="chart-note">6.17% margin, 19v20 scored rows</span></div></div>
+<div class="chart-row"><div class="chart-label">d7_payup deepseek reasonfix — cond</div><div class="chart-track"><div class="chart-bar" style="width:74.4%;background:#f58518"></div></div><div class="chart-value">2.01 <span class="chart-note">82.5% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">d7_payup kimi newdomains — cond</div><div class="chart-track"><div class="chart-bar" style="width:64.4%;background:#54a24b"></div></div><div class="chart-value">1.74 <span class="chart-note">71.2% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">d5_rfq glm reasonfix — cond</div><div class="chart-track"><div class="chart-bar" style="width:63.0%;background:#e45756"></div></div><div class="chart-value">1.7 <span class="chart-note">5.22% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">d7_payup glm reasonfix — cond</div><div class="chart-track"><div class="chart-bar" style="width:48.5%;background:#72b7b2"></div></div><div class="chart-value">1.31 <span class="chart-note">53.7% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">d7_payup kimi vary — cond</div><div class="chart-track"><div class="chart-bar" style="width:43.7%;background:#eeca3b"></div></div><div class="chart-value">1.18 <span class="chart-note">48.2% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">d5_rfq kimi vary — cond</div><div class="chart-track"><div class="chart-bar" style="width:41.5%;background:#b279a2"></div></div><div class="chart-value">1.12 <span class="chart-note">3.42% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">domain4 glm reasonfix — cond</div><div class="chart-track"><div class="chart-bar" style="width:39.3%;background:#9d755d"></div></div><div class="chart-value">1.06 <span class="chart-note">11.0% margin, msml had 3 rows on board</span></div></div>
+<div class="chart-row"><div class="chart-label">domain4 deepseek glm52 — msml</div><div class="chart-track"><div class="chart-bar" style="width:100.0%;background:#4c78a8"></div></div><div class="chart-value">2.7 <span class="chart-note">28.0% margin; cond side later improved 24%</span></div></div>
+<div class="chart-row"><div class="chart-label">domain4 glm vary — msml</div><div class="chart-track"><div class="chart-bar" style="width:17.8%;background:#f58518"></div></div><div class="chart-value">0.48 <span class="chart-note">5.0% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">d7_payup glm vary — cond</div><div class="chart-track"><div class="chart-bar" style="width:14.8%;background:#54a24b"></div></div><div class="chart-value">0.4 <span class="chart-note">16.2% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">d7_payup deepseek newdomains — msml</div><div class="chart-track"><div class="chart-bar" style="width:13.7%;background:#e45756"></div></div><div class="chart-value">0.37 <span class="chart-note">15.4% margin, cond had 5 rows on board</span></div></div>
+<div class="chart-row"><div class="chart-label">domain4 deepseek reasonfix — cond</div><div class="chart-track"><div class="chart-bar" style="width:11.1%;background:#72b7b2"></div></div><div class="chart-value">0.3 <span class="chart-note">3.16% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">domain4 glm glm52 — msml</div><div class="chart-track"><div class="chart-bar" style="width:7.4%;background:#eeca3b"></div></div><div class="chart-value">0.2 <span class="chart-note">2.05% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">d7_payup glm newdomains — msml</div><div class="chart-track"><div class="chart-bar" style="width:6.3%;background:#b279a2"></div></div><div class="chart-value">0.17 <span class="chart-note">7.17% margin</span></div></div>
+<div class="chart-row"><div class="chart-label">domain4 kimi glm52 — cond</div><div class="chart-track"><div class="chart-bar" style="width:1.0%;background:#9d755d"></div></div><div class="chart-value">0.01 <span class="chart-note">0.07% margin</span></div></div>
+</div>
+
+<p>Anything below 1.0 is inside the noise this campaign measured for that task. Only d5_rfq clears it in all its pairs.</p>
+<h3 id="where-the-wins-live-comparable-pairs-only-domain2-excluded-because-it-has-none">Where the wins live (comparable pairs only; domain2 excluded because it has none)</h3>
+<div class="chart">
+<div class="chart-title">cond wins minus msml wins per task x model (positive = cond better; 0 = 1-1 split or no pair)</div>
+<table class="heatmap"><thead><tr><th></th><th>glm-5.2</th><th>kimi-k3</th><th>deepseek-v4-flash</th></tr></thead><tbody><tr><th>d5_rfq</th><td style="background:rgba(76,120,168,0.90);color:#fff">2</td><td style="background:rgba(76,120,168,0.64);color:#fff">1</td><td style="background:rgba(76,120,168,0.38);color:#1a1a1a">0</td></tr><tr><th>d7_payup</th><td style="background:rgba(76,120,168,0.64);color:#fff">1</td><td style="background:rgba(76,120,168,0.90);color:#fff">2</td><td style="background:rgba(76,120,168,0.38);color:#1a1a1a">0</td></tr><tr><th>domain4</th><td style="background:rgba(76,120,168,0.12);color:#1a1a1a">-1</td><td style="background:rgba(76,120,168,0.64);color:#fff">1</td><td style="background:rgba(76,120,168,0.38);color:#1a1a1a">0</td></tr></tbody></table>
+</div>
+
+<p>d5_rfq glm = 2 pairs, both cond; d5_rfq has no deepseek cell. d7_payup deepseek and domain4 deepseek are 1-1; domain4 glm is 1 cond / 2 msml. No comparable domain2 pair exists at all.</p>
+<h3 id="best-so-far-progressions-in-referee-units-over-experiment-order">Best-so-far progressions, in referee units, over experiment order</h3>
+<div class="chart">
+<div class="chart-title">d5_rfq — referee log-loss best-so-far by scored experiment (lower is better; all three cond lines end below all three msml lines)</div>
+<svg viewBox="0 0 640 300" class="chart-svg" role="img" aria-label="d5_rfq — referee log-loss best-so-far by scored experiment (lower is better; all three cond lines end below all three msml lines)">
+<line x1="64" y1="208.8" x2="624" y2="208.8" class="grid"/>
+<text x="58" y="212.8" class="tick" text-anchor="end">0.35</text>
+<line x1="64" y1="144.1" x2="624" y2="144.1" class="grid"/>
+<text x="58" y="148.1" class="tick" text-anchor="end">0.4</text>
+<line x1="64" y1="79.4" x2="624" y2="79.4" class="grid"/>
+<text x="58" y="83.4" class="tick" text-anchor="end">0.45</text>
+<line x1="64" y1="14.7" x2="624" y2="14.7" class="grid"/>
+<text x="58" y="18.7" class="tick" text-anchor="end">0.5</text>
+<line x1="67.7" y1="14" x2="67.7" y2="258" class="grid"/>
+<text x="67.7" y="274" class="tick" text-anchor="middle">0</text>
+<line x1="199.3" y1="14" x2="199.3" y2="258" class="grid"/>
+<text x="199.3" y="274" class="tick" text-anchor="middle">5</text>
+<line x1="330.8" y1="14" x2="330.8" y2="258" class="grid"/>
+<text x="330.8" y="274" class="tick" text-anchor="middle">10</text>
+<line x1="462.4" y1="14" x2="462.4" y2="258" class="grid"/>
+<text x="462.4" y="274" class="tick" text-anchor="middle">15</text>
+<line x1="594.0" y1="14" x2="594.0" y2="258" class="grid"/>
+<text x="594.0" y="274" class="tick" text-anchor="middle">20</text>
+<rect x="64" y="14" width="560" height="244" class="frame"/>
+<text x="344.0" y="294" class="axis" text-anchor="middle">scored experiment index</text>
+<text x="14" y="136.0" class="axis" text-anchor="middle" transform="rotate(-90 14 136.0)">referee logloss (lower better)</text>
+<polyline points="94.0,27.1 120.3,144.6 146.6,186.3 172.9,186.3 199.3,186.3 225.6,207.3 251.9,207.3 278.2,207.3 304.5,207.3 330.8,207.3 357.2,226.0 383.5,233.0 409.8,233.0 436.1,233.0 462.4,244.9 488.7,244.9 515.1,244.9 541.4,244.9 567.7,244.9" fill="none" stroke="#4c78a8" stroke-width="2.2"/>
+<circle cx="94.0" cy="27.1" r="3" fill="#4c78a8"/>
+<circle cx="120.3" cy="144.6" r="3" fill="#4c78a8"/>
+<circle cx="146.6" cy="186.3" r="3" fill="#4c78a8"/>
+<circle cx="172.9" cy="186.3" r="3" fill="#4c78a8"/>
+<circle cx="199.3" cy="186.3" r="3" fill="#4c78a8"/>
+<circle cx="225.6" cy="207.3" r="3" fill="#4c78a8"/>
+<circle cx="251.9" cy="207.3" r="3" fill="#4c78a8"/>
+<circle cx="278.2" cy="207.3" r="3" fill="#4c78a8"/>
+<circle cx="304.5" cy="207.3" r="3" fill="#4c78a8"/>
+<circle cx="330.8" cy="207.3" r="3" fill="#4c78a8"/>
+<circle cx="357.2" cy="226.0" r="3" fill="#4c78a8"/>
+<circle cx="383.5" cy="233.0" r="3" fill="#4c78a8"/>
+<circle cx="409.8" cy="233.0" r="3" fill="#4c78a8"/>
+<circle cx="436.1" cy="233.0" r="3" fill="#4c78a8"/>
+<circle cx="462.4" cy="244.9" r="3" fill="#4c78a8"/>
+<circle cx="488.7" cy="244.9" r="3" fill="#4c78a8"/>
+<circle cx="515.1" cy="244.9" r="3" fill="#4c78a8"/>
+<circle cx="541.4" cy="244.9" r="3" fill="#4c78a8"/>
+<circle cx="567.7" cy="244.9" r="3" fill="#4c78a8"/>
+<text x="74" y="30" class="legend" fill="#4c78a8">&#9632; cond glm reasonfix</text>
+<polyline points="94.0,208.4 120.3,214.6 146.6,214.6 172.9,221.0 199.3,221.0 225.6,221.0 251.9,221.0 278.2,230.4 304.5,230.4 330.8,231.5 357.2,231.5 383.5,231.5 409.8,231.5 436.1,231.5 462.4,231.5 488.7,232.2 515.1,232.2 541.4,234.1 567.7,234.1" fill="none" stroke="#f58518" stroke-width="2.2"/>
+<circle cx="94.0" cy="208.4" r="3" fill="#f58518"/>
+<circle cx="120.3" cy="214.6" r="3" fill="#f58518"/>
+<circle cx="146.6" cy="214.6" r="3" fill="#f58518"/>
+<circle cx="172.9" cy="221.0" r="3" fill="#f58518"/>
+<circle cx="199.3" cy="221.0" r="3" fill="#f58518"/>
+<circle cx="225.6" cy="221.0" r="3" fill="#f58518"/>
+<circle cx="251.9" cy="221.0" r="3" fill="#f58518"/>
+<circle cx="278.2" cy="230.4" r="3" fill="#f58518"/>
+<circle cx="304.5" cy="230.4" r="3" fill="#f58518"/>
+<circle cx="330.8" cy="231.5" r="3" fill="#f58518"/>
+<circle cx="357.2" cy="231.5" r="3" fill="#f58518"/>
+<circle cx="383.5" cy="231.5" r="3" fill="#f58518"/>
+<circle cx="409.8" cy="231.5" r="3" fill="#f58518"/>
+<circle cx="436.1" cy="231.5" r="3" fill="#f58518"/>
+<circle cx="462.4" cy="231.5" r="3" fill="#f58518"/>
+<circle cx="488.7" cy="232.2" r="3" fill="#f58518"/>
+<circle cx="515.1" cy="232.2" r="3" fill="#f58518"/>
+<circle cx="541.4" cy="234.1" r="3" fill="#f58518"/>
+<circle cx="567.7" cy="234.1" r="3" fill="#f58518"/>
+<text x="74" y="46" class="legend" fill="#f58518">&#9632; cond glm vary</text>
+<polyline points="94.0,201.7 120.3,205.2 146.6,205.2 172.9,206.1 199.3,223.2 225.6,223.2 251.9,223.2 278.2,223.2 304.5,226.2 330.8,226.2 357.2,230.4 383.5,230.4 409.8,230.4 436.1,230.4 462.4,230.4 488.7,230.4 515.1,230.4 541.4,233.8 567.7,233.8" fill="none" stroke="#54a24b" stroke-width="2.2"/>
+<circle cx="94.0" cy="201.7" r="3" fill="#54a24b"/>
+<circle cx="120.3" cy="205.2" r="3" fill="#54a24b"/>
+<circle cx="146.6" cy="205.2" r="3" fill="#54a24b"/>
+<circle cx="172.9" cy="206.1" r="3" fill="#54a24b"/>
+<circle cx="199.3" cy="223.2" r="3" fill="#54a24b"/>
+<circle cx="225.6" cy="223.2" r="3" fill="#54a24b"/>
+<circle cx="251.9" cy="223.2" r="3" fill="#54a24b"/>
+<circle cx="278.2" cy="223.2" r="3" fill="#54a24b"/>
+<circle cx="304.5" cy="226.2" r="3" fill="#54a24b"/>
+<circle cx="330.8" cy="226.2" r="3" fill="#54a24b"/>
+<circle cx="357.2" cy="230.4" r="3" fill="#54a24b"/>
+<circle cx="383.5" cy="230.4" r="3" fill="#54a24b"/>
+<circle cx="409.8" cy="230.4" r="3" fill="#54a24b"/>
+<circle cx="436.1" cy="230.4" r="3" fill="#54a24b"/>
+<circle cx="462.4" cy="230.4" r="3" fill="#54a24b"/>
+<circle cx="488.7" cy="230.4" r="3" fill="#54a24b"/>
+<circle cx="515.1" cy="230.4" r="3" fill="#54a24b"/>
+<circle cx="541.4" cy="233.8" r="3" fill="#54a24b"/>
+<circle cx="567.7" cy="233.8" r="3" fill="#54a24b"/>
+<text x="74" y="62" class="legend" fill="#54a24b">&#9632; cond kimi vary</text>
+<polyline points="94.0,208.0 120.3,210.4 146.6,210.4 172.9,211.9 199.3,211.9 225.6,215.8 251.9,215.8 278.2,215.8 304.5,217.0 330.8,217.0 357.2,217.0 383.5,217.0 409.8,220.0 436.1,220.0 462.4,220.0 488.7,220.0 515.1,220.0 541.4,222.2 567.7,222.2 594.0,223.2" fill="none" stroke="#e45756" stroke-width="2.2"/>
+<circle cx="94.0" cy="208.0" r="3" fill="#e45756"/>
+<circle cx="120.3" cy="210.4" r="3" fill="#e45756"/>
+<circle cx="146.6" cy="210.4" r="3" fill="#e45756"/>
+<circle cx="172.9" cy="211.9" r="3" fill="#e45756"/>
+<circle cx="199.3" cy="211.9" r="3" fill="#e45756"/>
+<circle cx="225.6" cy="215.8" r="3" fill="#e45756"/>
+<circle cx="251.9" cy="215.8" r="3" fill="#e45756"/>
+<circle cx="278.2" cy="215.8" r="3" fill="#e45756"/>
+<circle cx="304.5" cy="217.0" r="3" fill="#e45756"/>
+<circle cx="330.8" cy="217.0" r="3" fill="#e45756"/>
+<circle cx="357.2" cy="217.0" r="3" fill="#e45756"/>
+<circle cx="383.5" cy="217.0" r="3" fill="#e45756"/>
+<circle cx="409.8" cy="220.0" r="3" fill="#e45756"/>
+<circle cx="436.1" cy="220.0" r="3" fill="#e45756"/>
+<circle cx="462.4" cy="220.0" r="3" fill="#e45756"/>
+<circle cx="488.7" cy="220.0" r="3" fill="#e45756"/>
+<circle cx="515.1" cy="220.0" r="3" fill="#e45756"/>
+<circle cx="541.4" cy="222.2" r="3" fill="#e45756"/>
+<circle cx="567.7" cy="222.2" r="3" fill="#e45756"/>
+<circle cx="594.0" cy="223.2" r="3" fill="#e45756"/>
+<text x="74" y="78" class="legend" fill="#e45756">&#9632; msml glm reasonfix</text>
+<polyline points="94.0,183.1 120.3,183.1 146.6,183.1 172.9,188.1 199.3,188.1 225.6,191.7 251.9,191.7 278.2,191.7 304.5,191.7 330.8,201.7 357.2,201.7 383.5,201.7 409.8,201.9 436.1,201.9 462.4,203.4 488.7,203.4 515.1,206.1 541.4,206.1 567.7,206.1 594.0,207.7" fill="none" stroke="#72b7b2" stroke-width="2.2"/>
+<circle cx="94.0" cy="183.1" r="3" fill="#72b7b2"/>
+<circle cx="120.3" cy="183.1" r="3" fill="#72b7b2"/>
+<circle cx="146.6" cy="183.1" r="3" fill="#72b7b2"/>
+<circle cx="172.9" cy="188.1" r="3" fill="#72b7b2"/>
+<circle cx="199.3" cy="188.1" r="3" fill="#72b7b2"/>
+<circle cx="225.6" cy="191.7" r="3" fill="#72b7b2"/>
+<circle cx="251.9" cy="191.7" r="3" fill="#72b7b2"/>
+<circle cx="278.2" cy="191.7" r="3" fill="#72b7b2"/>
+<circle cx="304.5" cy="191.7" r="3" fill="#72b7b2"/>
+<circle cx="330.8" cy="201.7" r="3" fill="#72b7b2"/>
+<circle cx="357.2" cy="201.7" r="3" fill="#72b7b2"/>
+<circle cx="383.5" cy="201.7" r="3" fill="#72b7b2"/>
+<circle cx="409.8" cy="201.9" r="3" fill="#72b7b2"/>
+<circle cx="436.1" cy="201.9" r="3" fill="#72b7b2"/>
+<circle cx="462.4" cy="203.4" r="3" fill="#72b7b2"/>
+<circle cx="488.7" cy="203.4" r="3" fill="#72b7b2"/>
+<circle cx="515.1" cy="206.1" r="3" fill="#72b7b2"/>
+<circle cx="541.4" cy="206.1" r="3" fill="#72b7b2"/>
+<circle cx="567.7" cy="206.1" r="3" fill="#72b7b2"/>
+<circle cx="594.0" cy="207.7" r="3" fill="#72b7b2"/>
+<text x="74" y="94" class="legend" fill="#72b7b2">&#9632; msml glm vary</text>
+<polyline points="94.0,127.0 120.3,127.0 146.6,127.0 172.9,180.8 199.3,184.8 225.6,212.9 251.9,212.9 278.2,212.9 304.5,215.7 330.8,215.7 357.2,215.7 383.5,215.7 409.8,215.7 436.1,219.1" fill="none" stroke="#eeca3b" stroke-width="2.2"/>
+<circle cx="94.0" cy="127.0" r="3" fill="#eeca3b"/>
+<circle cx="120.3" cy="127.0" r="3" fill="#eeca3b"/>
+<circle cx="146.6" cy="127.0" r="3" fill="#eeca3b"/>
+<circle cx="172.9" cy="180.8" r="3" fill="#eeca3b"/>
+<circle cx="199.3" cy="184.8" r="3" fill="#eeca3b"/>
+<circle cx="225.6" cy="212.9" r="3" fill="#eeca3b"/>
+<circle cx="251.9" cy="212.9" r="3" fill="#eeca3b"/>
+<circle cx="278.2" cy="212.9" r="3" fill="#eeca3b"/>
+<circle cx="304.5" cy="215.7" r="3" fill="#eeca3b"/>
+<circle cx="330.8" cy="215.7" r="3" fill="#eeca3b"/>
+<circle cx="357.2" cy="215.7" r="3" fill="#eeca3b"/>
+<circle cx="383.5" cy="215.7" r="3" fill="#eeca3b"/>
+<circle cx="409.8" cy="215.7" r="3" fill="#eeca3b"/>
+<circle cx="436.1" cy="219.1" r="3" fill="#eeca3b"/>
+<text x="74" y="110" class="legend" fill="#eeca3b">&#9632; msml kimi vary</text>
+</svg>
+</div>
+
+<div class="chart">
+<div class="chart-title">domain4 — the era flip in referee RMSE best-so-far (lower is better): msml ahead pre-fix, cond ahead in reasonfix</div>
+<svg viewBox="0 0 640 300" class="chart-svg" role="img" aria-label="domain4 — the era flip in referee RMSE best-so-far (lower is better): msml ahead pre-fix, cond ahead in reasonfix">
+<line x1="64" y1="174.8" x2="624" y2="174.8" class="grid"/>
+<text x="58" y="178.8" class="tick" text-anchor="end">0.03</text>
+<line x1="64" y1="88.9" x2="624" y2="88.9" class="grid"/>
+<text x="58" y="92.9" class="tick" text-anchor="end">0.04</text>
+<line x1="67.7" y1="14" x2="67.7" y2="258" class="grid"/>
+<text x="67.7" y="274" class="tick" text-anchor="middle">0</text>
+<line x1="199.3" y1="14" x2="199.3" y2="258" class="grid"/>
+<text x="199.3" y="274" class="tick" text-anchor="middle">5</text>
+<line x1="330.8" y1="14" x2="330.8" y2="258" class="grid"/>
+<text x="330.8" y="274" class="tick" text-anchor="middle">10</text>
+<line x1="462.4" y1="14" x2="462.4" y2="258" class="grid"/>
+<text x="462.4" y="274" class="tick" text-anchor="middle">15</text>
+<line x1="594.0" y1="14" x2="594.0" y2="258" class="grid"/>
+<text x="594.0" y="274" class="tick" text-anchor="middle">20</text>
+<rect x="64" y="14" width="560" height="244" class="frame"/>
+<text x="344.0" y="294" class="axis" text-anchor="middle">scored experiment index</text>
+<text x="14" y="136.0" class="axis" text-anchor="middle" transform="rotate(-90 14 136.0)">referee rmse (lower better)</text>
+<polyline points="94.0,27.1 120.3,168.5 146.6,168.5 172.9,176.3 199.3,186.0 225.6,186.0 251.9,186.0 278.2,186.0 304.5,186.0 330.8,186.0 357.2,186.0 383.5,186.0" fill="none" stroke="#4c78a8" stroke-width="2.2"/>
+<circle cx="94.0" cy="27.1" r="3" fill="#4c78a8"/>
+<circle cx="120.3" cy="168.5" r="3" fill="#4c78a8"/>
+<circle cx="146.6" cy="168.5" r="3" fill="#4c78a8"/>
+<circle cx="172.9" cy="176.3" r="3" fill="#4c78a8"/>
+<circle cx="199.3" cy="186.0" r="3" fill="#4c78a8"/>
+<circle cx="225.6" cy="186.0" r="3" fill="#4c78a8"/>
+<circle cx="251.9" cy="186.0" r="3" fill="#4c78a8"/>
+<circle cx="278.2" cy="186.0" r="3" fill="#4c78a8"/>
+<circle cx="304.5" cy="186.0" r="3" fill="#4c78a8"/>
+<circle cx="330.8" cy="186.0" r="3" fill="#4c78a8"/>
+<circle cx="357.2" cy="186.0" r="3" fill="#4c78a8"/>
+<circle cx="383.5" cy="186.0" r="3" fill="#4c78a8"/>
+<text x="74" y="30" class="legend" fill="#4c78a8">&#9632; cond deepseek glm52</text>
+<polyline points="94.0,153.0" fill="none" stroke="#f58518" stroke-width="2.2"/>
+<circle cx="94.0" cy="153.0" r="3" fill="#f58518"/>
+<text x="74" y="46" class="legend" fill="#f58518">&#9632; msml deepseek glm52</text>
+<polyline points="94.0,213.4 120.3,232.8 146.6,240.7 172.9,243.5 199.3,243.5 225.6,243.5 251.9,243.5 278.2,244.4 304.5,244.4 330.8,244.4 357.2,244.4 383.5,244.4 409.8,244.4 436.1,244.4 462.4,244.4 488.7,244.4 515.1,244.4 541.4,244.4 567.7,244.4 594.0,244.4" fill="none" stroke="#54a24b" stroke-width="2.2"/>
+<circle cx="94.0" cy="213.4" r="3" fill="#54a24b"/>
+<circle cx="120.3" cy="232.8" r="3" fill="#54a24b"/>
+<circle cx="146.6" cy="240.7" r="3" fill="#54a24b"/>
+<circle cx="172.9" cy="243.5" r="3" fill="#54a24b"/>
+<circle cx="199.3" cy="243.5" r="3" fill="#54a24b"/>
+<circle cx="225.6" cy="243.5" r="3" fill="#54a24b"/>
+<circle cx="251.9" cy="243.5" r="3" fill="#54a24b"/>
+<circle cx="278.2" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="304.5" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="330.8" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="357.2" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="383.5" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="409.8" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="436.1" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="462.4" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="488.7" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="515.1" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="541.4" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="567.7" cy="244.4" r="3" fill="#54a24b"/>
+<circle cx="594.0" cy="244.4" r="3" fill="#54a24b"/>
+<text x="74" y="62" class="legend" fill="#54a24b">&#9632; cond deepseek reasonfix</text>
+<polyline points="94.0,113.4 120.3,185.2 146.6,185.2 172.9,235.6 199.3,235.6 225.6,235.6 251.9,235.6 278.2,235.6 304.5,238.4 330.8,238.5" fill="none" stroke="#e45756" stroke-width="2.2"/>
+<circle cx="94.0" cy="113.4" r="3" fill="#e45756"/>
+<circle cx="120.3" cy="185.2" r="3" fill="#e45756"/>
+<circle cx="146.6" cy="185.2" r="3" fill="#e45756"/>
+<circle cx="172.9" cy="235.6" r="3" fill="#e45756"/>
+<circle cx="199.3" cy="235.6" r="3" fill="#e45756"/>
+<circle cx="225.6" cy="235.6" r="3" fill="#e45756"/>
+<circle cx="251.9" cy="235.6" r="3" fill="#e45756"/>
+<circle cx="278.2" cy="235.6" r="3" fill="#e45756"/>
+<circle cx="304.5" cy="238.4" r="3" fill="#e45756"/>
+<circle cx="330.8" cy="238.5" r="3" fill="#e45756"/>
+<text x="74" y="78" class="legend" fill="#e45756">&#9632; msml deepseek reasonfix</text>
+<polyline points="94.0,186.8 120.3,217.6 146.6,226.9 172.9,242.4 199.3,242.4 225.6,242.4 251.9,242.4 278.2,242.4 304.5,242.4 330.8,242.4 357.2,242.4 383.5,242.4 409.8,242.4 436.1,242.4 462.4,242.4 488.7,242.4 515.1,242.4" fill="none" stroke="#72b7b2" stroke-width="2.2"/>
+<circle cx="94.0" cy="186.8" r="3" fill="#72b7b2"/>
+<circle cx="120.3" cy="217.6" r="3" fill="#72b7b2"/>
+<circle cx="146.6" cy="226.9" r="3" fill="#72b7b2"/>
+<circle cx="172.9" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="199.3" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="225.6" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="251.9" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="278.2" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="304.5" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="330.8" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="357.2" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="383.5" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="409.8" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="436.1" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="462.4" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="488.7" cy="242.4" r="3" fill="#72b7b2"/>
+<circle cx="515.1" cy="242.4" r="3" fill="#72b7b2"/>
+<text x="74" y="94" class="legend" fill="#72b7b2">&#9632; cond glm reasonfix</text>
+<polyline points="94.0,220.1 120.3,220.1 146.6,221.4" fill="none" stroke="#eeca3b" stroke-width="2.2"/>
+<circle cx="94.0" cy="220.1" r="3" fill="#eeca3b"/>
+<circle cx="120.3" cy="220.1" r="3" fill="#eeca3b"/>
+<circle cx="146.6" cy="221.4" r="3" fill="#eeca3b"/>
+<text x="74" y="110" class="legend" fill="#eeca3b">&#9632; msml glm reasonfix</text>
+<polyline points="94.0,237.1 120.3,238.6 146.6,238.6 172.9,238.6 199.3,238.6 225.6,238.6 251.9,238.6 278.2,238.6 304.5,238.6 330.8,244.2 357.2,244.2 383.5,244.2 409.8,244.2 436.1,244.2 462.4,244.2 488.7,244.2 515.1,244.2 541.4,244.2 567.7,244.9 594.0,244.9" fill="none" stroke="#b279a2" stroke-width="2.2"/>
+<circle cx="94.0" cy="237.1" r="3" fill="#b279a2"/>
+<circle cx="120.3" cy="238.6" r="3" fill="#b279a2"/>
+<circle cx="146.6" cy="238.6" r="3" fill="#b279a2"/>
+<circle cx="172.9" cy="238.6" r="3" fill="#b279a2"/>
+<circle cx="199.3" cy="238.6" r="3" fill="#b279a2"/>
+<circle cx="225.6" cy="238.6" r="3" fill="#b279a2"/>
+<circle cx="251.9" cy="238.6" r="3" fill="#b279a2"/>
+<circle cx="278.2" cy="238.6" r="3" fill="#b279a2"/>
+<circle cx="304.5" cy="238.6" r="3" fill="#b279a2"/>
+<circle cx="330.8" cy="244.2" r="3" fill="#b279a2"/>
+<circle cx="357.2" cy="244.2" r="3" fill="#b279a2"/>
+<circle cx="383.5" cy="244.2" r="3" fill="#b279a2"/>
+<circle cx="409.8" cy="244.2" r="3" fill="#b279a2"/>
+<circle cx="436.1" cy="244.2" r="3" fill="#b279a2"/>
+<circle cx="462.4" cy="244.2" r="3" fill="#b279a2"/>
+<circle cx="488.7" cy="244.2" r="3" fill="#b279a2"/>
+<circle cx="515.1" cy="244.2" r="3" fill="#b279a2"/>
+<circle cx="541.4" cy="244.2" r="3" fill="#b279a2"/>
+<circle cx="567.7" cy="244.9" r="3" fill="#b279a2"/>
+<circle cx="594.0" cy="244.9" r="3" fill="#b279a2"/>
+<text x="74" y="126" class="legend" fill="#b279a2">&#9632; cond kimi glm52</text>
+<polyline points="94.0,88.6 120.3,187.1 146.6,230.3 172.9,233.7 199.3,241.0 225.6,241.0 251.9,243.1 278.2,243.1 304.5,243.1 330.8,243.1 357.2,244.8 383.5,244.8" fill="none" stroke="#9d755d" stroke-width="2.2"/>
+<circle cx="94.0" cy="88.6" r="3" fill="#9d755d"/>
+<circle cx="120.3" cy="187.1" r="3" fill="#9d755d"/>
+<circle cx="146.6" cy="230.3" r="3" fill="#9d755d"/>
+<circle cx="172.9" cy="233.7" r="3" fill="#9d755d"/>
+<circle cx="199.3" cy="241.0" r="3" fill="#9d755d"/>
+<circle cx="225.6" cy="241.0" r="3" fill="#9d755d"/>
+<circle cx="251.9" cy="243.1" r="3" fill="#9d755d"/>
+<circle cx="278.2" cy="243.1" r="3" fill="#9d755d"/>
+<circle cx="304.5" cy="243.1" r="3" fill="#9d755d"/>
+<circle cx="330.8" cy="243.1" r="3" fill="#9d755d"/>
+<circle cx="357.2" cy="244.8" r="3" fill="#9d755d"/>
+<circle cx="383.5" cy="244.8" r="3" fill="#9d755d"/>
+<text x="74" y="142" class="legend" fill="#9d755d">&#9632; msml kimi glm52</text>
+</svg>
+</div>
+
+<p>The msml deepseek glm52 series has a single point and msml glm reasonfix only three: those runs preserved predictions at the shared origins for only 1 and 3 experiments. Unequal draws are part of the story, not hidden from it.</p>
+<h3 id="the-search-itself-how-fast-each-harness-closes-the-gap-to-the-tasks-best">The search itself: how fast each harness closes the gap to the task's best</h3>
+<div class="chart">
+<div class="chart-title">Best-so-far quality as a ratio to the task&#x27;s best value, quantile band across runs (1.0 = corpus best for that task; lower is better)</div>
+<svg viewBox="0 0 640 300" class="chart-svg" role="img" aria-label="Best-so-far quality as a ratio to the task&#x27;s best value, quantile band across runs (1.0 = corpus best for that task; lower is better)">
+<line x1="64" y1="244.9" x2="624" y2="244.9" class="grid"/>
+<text x="58" y="248.9" class="tick" text-anchor="end">1</text>
+<line x1="64" y1="190.3" x2="624" y2="190.3" class="grid"/>
+<text x="58" y="194.3" class="tick" text-anchor="end">1.25</text>
+<line x1="64" y1="135.6" x2="624" y2="135.6" class="grid"/>
+<text x="58" y="139.6" class="tick" text-anchor="end">1.5</text>
+<line x1="64" y1="80.9" x2="624" y2="80.9" class="grid"/>
+<text x="58" y="84.9" class="tick" text-anchor="end">1.75</text>
+<line x1="64" y1="26.2" x2="624" y2="26.2" class="grid"/>
+<text x="58" y="30.2" class="tick" text-anchor="end">2</text>
+<line x1="67.7" y1="14" x2="67.7" y2="258" class="grid"/>
+<text x="67.7" y="274" class="tick" text-anchor="middle">0</text>
+<line x1="199.3" y1="14" x2="199.3" y2="258" class="grid"/>
+<text x="199.3" y="274" class="tick" text-anchor="middle">5</text>
+<line x1="330.8" y1="14" x2="330.8" y2="258" class="grid"/>
+<text x="330.8" y="274" class="tick" text-anchor="middle">10</text>
+<line x1="462.4" y1="14" x2="462.4" y2="258" class="grid"/>
+<text x="462.4" y="274" class="tick" text-anchor="middle">15</text>
+<line x1="594.0" y1="14" x2="594.0" y2="258" class="grid"/>
+<text x="594.0" y="274" class="tick" text-anchor="middle">20</text>
+<rect x="64" y="14" width="560" height="244" class="frame"/>
+<text x="344.0" y="294" class="axis" text-anchor="middle">scored experiment index</text>
+<text x="14" y="136.0" class="axis" text-anchor="middle" transform="rotate(-90 14 136.0)">best-so-far / task best</text>
+<polygon points="94.0,44.5 120.3,116.1 146.6,135.3 172.9,151.6 199.3,175.8 225.6,176.4 251.9,176.4 278.2,176.4 304.5,214.4 330.8,214.4 357.2,217.3 383.5,226.6 409.8,237.3 436.1,237.3 462.4,237.3 488.7,237.3 515.1,238.3 541.4,239.2 567.7,239.2 594.0,244.4 594.0,244.9 567.7,244.9 541.4,244.4 515.1,244.4 488.7,244.1 462.4,244.1 436.1,242.0 409.8,242.0 383.5,242.0 357.2,239.6 330.8,239.6 304.5,238.4 278.2,237.5 251.9,237.5 225.6,237.5 199.3,237.5 172.9,237.3 146.6,229.0 120.3,224.1 94.0,220.4" fill="#4c78a8" fill-opacity="0.22"/>
+<polyline points="94.0,177.2 120.3,192.3 146.6,214.4 172.9,214.4 199.3,214.4 225.6,225.2 251.9,226.8 278.2,230.5 304.5,234.5 330.8,234.5 357.2,235.0 383.5,237.9 409.8,238.7 436.1,238.7 462.4,239.6 488.7,239.6 515.1,242.0 541.4,239.6 567.7,242.2 594.0,244.9" fill="none" stroke="#4c78a8" stroke-width="2.2"/>
+<text x="74" y="30" class="legend" fill="#4c78a8">&#9632; cond (band lo/mid/hi)</text>
+<polygon points="94.0,27.1 120.3,121.0 146.6,135.9 172.9,129.8 199.3,129.8 225.6,129.8 251.9,129.8 278.2,129.8 304.5,129.8 330.8,129.8 357.2,129.8 383.5,84.6 409.8,229.0 436.1,229.0 436.1,231.8 409.8,231.8 383.5,230.3 357.2,230.3 330.8,237.4 304.5,237.3 278.2,234.0 251.9,234.0 225.6,234.0 199.3,234.0 172.9,231.8 146.6,226.8 120.3,215.4 94.0,215.4" fill="#f58518" fill-opacity="0.22"/>
+<polyline points="94.0,114.3 120.3,203.4 146.6,212.5 172.9,213.9 199.3,213.9 225.6,217.0 251.9,217.0 278.2,217.0 304.5,217.0 330.8,222.2 357.2,222.2 383.5,222.2 409.8,229.6 436.1,231.4" fill="none" stroke="#f58518" stroke-width="2.2"/>
+<text x="74" y="46" class="legend" fill="#f58518">&#9632; msml (band lo/mid/hi)</text>
+</svg>
+</div>
+
+<p>Interquartile band across all runs with at least four runs contributing at that index (cond reaches index 20, msml index 14). The medians converge; cond's lower quartile reaches 1.0000 by index 19-20 while msml's floor stalls near 1.06.</p>
+<h3 id="the-costquality-trade-off">The cost/quality trade-off</h3>
+<div class="chart">
+<div class="chart-title">Tokens spent vs quality achieved (x = total tokens, y = referee best ÷ task best; bottom-left wins)</div>
+<svg viewBox="0 0 640 344" class="chart-svg" role="img" aria-label="Tokens spent vs quality achieved (x = total tokens, y = referee best ÷ task best; bottom-left wins)">
+<line x1="64" y1="288.9" x2="580" y2="288.9" class="grid"/>
+<text x="58" y="292.9" class="tick" text-anchor="end">1</text>
+<line x1="64" y1="204.8" x2="580" y2="204.8" class="grid"/>
+<text x="58" y="208.8" class="tick" text-anchor="end">1.5</text>
+<line x1="64" y1="120.7" x2="580" y2="120.7" class="grid"/>
+<text x="58" y="124.7" class="tick" text-anchor="end">2</text>
+<line x1="73.5" y1="58" x2="73.5" y2="302" class="grid"/>
+<text x="73.5" y="318" class="tick" text-anchor="middle">0</text>
+<line x1="257.4" y1="58" x2="257.4" y2="302" class="grid"/>
+<text x="257.4" y="318" class="tick" text-anchor="middle">200</text>
+<line x1="441.4" y1="58" x2="441.4" y2="302" class="grid"/>
+<text x="441.4" y="318" class="tick" text-anchor="middle">400</text>
+<rect x="64" y="58" width="516" height="244" class="frame"/>
+<text x="322.0" y="338" class="axis" text-anchor="middle">total tokens (millions)</text>
+<text x="14" y="180.0" class="axis" text-anchor="middle" transform="rotate(-90 14 180.0)">referee best / best value achieved on that task</text>
+<rect x="64.5" y="46.4" width="42.0" height="7.6" fill="#8ea8c5"/>
+<rect x="107.5" y="16.0" width="42.0" height="38.0" fill="#8ea8c5"/>
+<rect x="150.5" y="35.0" width="42.0" height="19.0" fill="#8ea8c5"/>
+<rect x="193.5" y="46.4" width="42.0" height="7.6" fill="#8ea8c5"/>
+<rect x="537.5" y="52.1" width="42.0" height="1.9" fill="#8ea8c5"/>
+<rect x="584.0" y="282.2" width="38.0" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="261.8" width="26.1" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="221.2" width="7.1" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="200.8" width="9.5" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="180.5" width="2.4" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="160.2" width="2.4" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="139.8" width="2.4" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="78.8" width="2.4" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="58.5" width="2.4" height="19.3" fill="#8ea8c5"/>
+<circle cx="167.4" cy="288.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="174.4" y="282.9" class="ptlabel">d5r_glm_cond</text>
+<circle cx="198.0" cy="284.6" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="205.0" y="278.6" class="ptlabel">d5v_glm_cond</text>
+<circle cx="198.2" cy="284.4" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="205.2" y="278.4" class="ptlabel">d5v_k3_cond</text>
+<circle cx="143.7" cy="280.1" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="150.7" y="274.1" class="ptlabel">d5r_glm_msml</text>
+<circle cx="169.9" cy="273.9" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="176.9" y="267.9" class="ptlabel">d5v_glm_msml</text>
+<circle cx="106.4" cy="278.5" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="113.4" y="272.5" class="ptlabel">d5v_k3_msml</text>
+<circle cx="120.9" cy="235.7" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="127.9" y="229.7" class="ptlabel">d7_payup_dsv4_cond</text>
+<circle cx="126.5" cy="288.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="133.5" y="282.9" class="ptlabel">d7r_dsv4_cond</text>
+<circle cx="114.1" cy="199.3" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="121.1" y="193.3" class="ptlabel">d7_payup_glm_cond</text>
+<circle cx="125.5" cy="217.2" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="132.5" y="211.2" class="ptlabel">d7r_glm_cond</text>
+<circle cx="138.5" cy="206.3" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="145.5" y="200.3" class="ptlabel">d7v_glm_cond</text>
+<circle cx="114.6" cy="231.7" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="121.6" y="225.7" class="ptlabel">d7_payup_k3_cond</text>
+<circle cx="136.6" cy="283.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="143.6" y="277.9" class="ptlabel">d7v_k3_cond</text>
+<circle cx="114.8" cy="265.2" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="121.8" y="259.2" class="ptlabel">d7_payup_dsv4_msml</text>
+<circle cx="100.7" cy="150.1" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="107.7" y="144.1" class="ptlabel">d7r_dsv4_msml</text>
+<circle cx="116.6" cy="216.6" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="123.6" y="210.6" class="ptlabel">d7_payup_glm_msml</text>
+<circle cx="110.1" cy="88.2" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="117.1" y="82.2" class="ptlabel">d7r_glm_msml</text>
+<circle cx="120.2" cy="165.6" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="127.2" y="159.6" class="ptlabel">d7v_glm_msml</text>
+<circle cx="91.6" cy="71.1" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="98.6" y="65.1" class="ptlabel">d7_payup_k3_msml</text>
+<circle cx="101.7" cy="200.4" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="108.7" y="194.4" class="ptlabel">d7v_k3_msml</text>
+<circle cx="552.4" cy="281.6" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="559.4" y="275.6" class="ptlabel">d2_glm_cond</text>
+<circle cx="154.1" cy="276.2" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="161.1" y="270.2" class="ptlabel">d2r_glm_cond</text>
+<circle cx="186.8" cy="283.1" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="193.8" y="277.1" class="ptlabel">d2v_glm_cond</text>
+<circle cx="132.5" cy="288.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="139.5" y="282.9" class="ptlabel">d2v_k3_cond</text>
+<circle cx="185.3" cy="272.5" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="192.3" y="266.5" class="ptlabel">d2_glm_msml</text>
+<circle cx="202.4" cy="281.8" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="209.4" y="275.8" class="ptlabel">d2v_glm_msml</text>
+<circle cx="123.4" cy="288.1" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="130.4" y="282.1" class="ptlabel">d2v_k3_msml</text>
+<circle cx="138.4" cy="236.2" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="145.4" y="230.2" class="ptlabel">d4_dsv4_cond_direct</text>
+<circle cx="133.2" cy="288.5" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="140.2" y="282.5" class="ptlabel">d4r_dsv4_cond</text>
+<circle cx="197.9" cy="280.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="204.9" y="274.9" class="ptlabel">d4_glm_cond_direct</text>
+<circle cx="165.5" cy="286.6" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="172.5" y="280.6" class="ptlabel">d4r_glm_cond</text>
+<circle cx="165.4" cy="267.7" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="172.4" y="261.7" class="ptlabel">d4v_glm_cond</text>
+<circle cx="132.2" cy="288.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="139.2" y="282.9" class="ptlabel">d4_k3_cond_direct</text>
+<circle cx="125.1" cy="284.5" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="132.1" y="278.5" class="ptlabel">d4_dsv4_msml_direct</text>
+<circle cx="157.5" cy="283.2" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="164.5" y="277.2" class="ptlabel">d4r_dsv4_msml</text>
+<circle cx="163.6" cy="276.7" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="170.6" y="270.7" class="ptlabel">d4v_glm_msml</text>
+<circle cx="127.6" cy="267.8" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="134.6" y="261.8" class="ptlabel">d4r_glm_msml</text>
+<circle cx="158.4" cy="284.5" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="165.4" y="278.5" class="ptlabel">d4_glm_msml_direct</text>
+<circle cx="125.9" cy="288.8" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="132.9" y="282.8" class="ptlabel">d4_k3_msml_direct</text>
+<text x="74" y="74" class="legend" fill="#4c78a8">&#9679; cond</text>
+<text x="74" y="90" class="legend" fill="#f58518">&#9679; msml</text>
+</svg>
+</div>
+
+<p>39 of 41 runs appear; <code>d2r_glm_msml</code> and <code>d4v_k3_cond</code> are absent because neither has a referee-comparable best (the first preserved no scoreable predictions, the second's pair partner never completed). <code>d2_glm_cond</code> at 520.7M tokens is the outlier that made cond's reputation for bloat — it is one run, not the pattern.</p>
+<div class="chart">
+<div class="chart-title">Registry wall_hours vs quality achieved (x = registry lifecycle.wall_hours, y = referee best ÷ task best; bottom-left wins)</div>
+<svg viewBox="0 0 640 344" class="chart-svg" role="img" aria-label="Registry wall_hours vs quality achieved (x = registry lifecycle.wall_hours, y = referee best ÷ task best; bottom-left wins)">
+<line x1="64" y1="288.9" x2="580" y2="288.9" class="grid"/>
+<text x="58" y="292.9" class="tick" text-anchor="end">1</text>
+<line x1="64" y1="204.8" x2="580" y2="204.8" class="grid"/>
+<text x="58" y="208.8" class="tick" text-anchor="end">1.5</text>
+<line x1="64" y1="120.7" x2="580" y2="120.7" class="grid"/>
+<text x="58" y="124.7" class="tick" text-anchor="end">2</text>
+<line x1="65.2" y1="58" x2="65.2" y2="302" class="grid"/>
+<text x="65.2" y="318" class="tick" text-anchor="middle">0</text>
+<line x1="218.2" y1="58" x2="218.2" y2="302" class="grid"/>
+<text x="218.2" y="318" class="tick" text-anchor="middle">10</text>
+<line x1="371.3" y1="58" x2="371.3" y2="302" class="grid"/>
+<text x="371.3" y="318" class="tick" text-anchor="middle">20</text>
+<line x1="524.3" y1="58" x2="524.3" y2="302" class="grid"/>
+<text x="524.3" y="318" class="tick" text-anchor="middle">30</text>
+<rect x="64" y="58" width="516" height="244" class="frame"/>
+<text x="322.0" y="338" class="axis" text-anchor="middle">registry wall_hours</text>
+<text x="14" y="180.0" class="axis" text-anchor="middle" transform="rotate(-90 14 180.0)">referee best / best value achieved on that task</text>
+<rect x="64.5" y="49.8" width="42.0" height="4.2" fill="#8ea8c5"/>
+<rect x="107.5" y="16.0" width="42.0" height="38.0" fill="#8ea8c5"/>
+<rect x="150.5" y="39.2" width="42.0" height="14.8" fill="#8ea8c5"/>
+<rect x="193.5" y="51.9" width="42.0" height="2.1" fill="#8ea8c5"/>
+<rect x="236.5" y="49.8" width="42.0" height="4.2" fill="#8ea8c5"/>
+<rect x="279.5" y="51.9" width="42.0" height="2.1" fill="#8ea8c5"/>
+<rect x="322.5" y="45.6" width="42.0" height="8.4" fill="#8ea8c5"/>
+<rect x="365.5" y="49.8" width="42.0" height="4.2" fill="#8ea8c5"/>
+<rect x="408.5" y="51.9" width="42.0" height="2.1" fill="#8ea8c5"/>
+<rect x="537.5" y="51.9" width="42.0" height="2.1" fill="#8ea8c5"/>
+<rect x="584.0" y="282.2" width="38.0" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="261.8" width="26.1" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="221.2" width="7.1" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="200.8" width="9.5" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="180.5" width="2.4" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="160.2" width="2.4" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="139.8" width="2.4" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="78.8" width="2.4" height="19.3" fill="#8ea8c5"/>
+<rect x="584.0" y="58.5" width="2.4" height="19.3" fill="#8ea8c5"/>
+<circle cx="125.6" cy="288.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="132.6" y="282.9" class="ptlabel">d5r_glm_cond</text>
+<circle cx="123.6" cy="284.6" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="130.6" y="278.6" class="ptlabel">d5v_glm_cond</text>
+<circle cx="552.4" cy="284.4" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="559.4" y="278.4" class="ptlabel">d5v_k3_cond</text>
+<circle cx="137.6" cy="280.1" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="144.6" y="274.1" class="ptlabel">d5r_glm_msml</text>
+<circle cx="139.1" cy="273.9" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="146.1" y="267.9" class="ptlabel">d5v_glm_msml</text>
+<circle cx="333.8" cy="278.5" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="340.8" y="272.5" class="ptlabel">d5v_k3_msml</text>
+<circle cx="99.0" cy="235.7" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="106.0" y="229.7" class="ptlabel">d7_payup_dsv4_cond</text>
+<circle cx="125.5" cy="288.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="132.5" y="282.9" class="ptlabel">d7r_dsv4_cond</text>
+<circle cx="121.8" cy="199.3" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="128.8" y="193.3" class="ptlabel">d7_payup_glm_cond</text>
+<circle cx="121.5" cy="217.2" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="128.5" y="211.2" class="ptlabel">d7r_glm_cond</text>
+<circle cx="120.4" cy="206.3" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="127.4" y="200.3" class="ptlabel">d7v_glm_cond</text>
+<circle cx="165.9" cy="231.7" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="172.9" y="225.7" class="ptlabel">d7_payup_k3_cond</text>
+<circle cx="328.9" cy="283.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="335.9" y="277.9" class="ptlabel">d7v_k3_cond</text>
+<circle cx="165.3" cy="265.2" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="172.3" y="259.2" class="ptlabel">d7_payup_dsv4_msml</text>
+<circle cx="130.8" cy="150.1" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="137.8" y="144.1" class="ptlabel">d7r_dsv4_msml</text>
+<circle cx="128.2" cy="216.6" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="135.2" y="210.6" class="ptlabel">d7_payup_glm_msml</text>
+<circle cx="129.1" cy="88.2" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="136.1" y="82.2" class="ptlabel">d7r_glm_msml</text>
+<circle cx="127.3" cy="165.6" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="134.3" y="159.6" class="ptlabel">d7v_glm_msml</text>
+<circle cx="147.8" cy="71.1" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="154.8" y="65.1" class="ptlabel">d7_payup_k3_msml</text>
+<circle cx="280.7" cy="200.4" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="287.7" y="194.4" class="ptlabel">d7v_k3_msml</text>
+<circle cx="327.8" cy="281.6" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="334.8" y="275.6" class="ptlabel">d2_glm_cond</text>
+<circle cx="189.1" cy="276.2" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="196.1" y="270.2" class="ptlabel">d2r_glm_cond</text>
+<circle cx="259.7" cy="283.1" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="266.7" y="277.1" class="ptlabel">d2v_glm_cond</text>
+<circle cx="366.8" cy="288.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="373.8" y="282.9" class="ptlabel">d2v_k3_cond</text>
+<circle cx="186.2" cy="272.5" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="193.2" y="266.5" class="ptlabel">d2_glm_msml</text>
+<circle cx="267.7" cy="281.8" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="274.7" y="275.8" class="ptlabel">d2v_glm_msml</text>
+<circle cx="384.6" cy="288.1" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="391.6" y="282.1" class="ptlabel">d2v_k3_msml</text>
+<circle cx="201.2" cy="236.2" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="208.2" y="230.2" class="ptlabel">d4_dsv4_cond_direct</text>
+<circle cx="174.8" cy="288.5" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="181.8" y="282.5" class="ptlabel">d4r_dsv4_cond</text>
+<circle cx="146.9" cy="280.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="153.9" y="274.9" class="ptlabel">d4_glm_cond_direct</text>
+<circle cx="159.6" cy="286.6" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="166.6" y="280.6" class="ptlabel">d4r_glm_cond</text>
+<circle cx="135.1" cy="267.7" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="142.1" y="261.7" class="ptlabel">d4v_glm_cond</text>
+<circle cx="352.3" cy="288.9" r="5" fill="#4c78a8" fill-opacity="0.85"/>
+<text x="359.3" y="282.9" class="ptlabel">d4_k3_cond_direct</text>
+<circle cx="130.4" cy="284.5" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="137.4" y="278.5" class="ptlabel">d4_dsv4_msml_direct</text>
+<circle cx="91.6" cy="283.2" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="98.6" y="277.2" class="ptlabel">d4r_dsv4_msml</text>
+<circle cx="143.8" cy="276.7" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="150.8" y="270.7" class="ptlabel">d4v_glm_msml</text>
+<circle cx="116.4" cy="267.8" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="123.4" y="261.8" class="ptlabel">d4r_glm_msml</text>
+<circle cx="179.0" cy="284.5" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="186.0" y="278.5" class="ptlabel">d4_glm_msml_direct</text>
+<circle cx="439.2" cy="288.8" r="5" fill="#f58518" fill-opacity="0.85"/>
+<text x="446.2" y="282.8" class="ptlabel">d4_k3_msml_direct</text>
+<text x="74" y="74" class="legend" fill="#4c78a8">&#9679; cond</text>
+<text x="74" y="90" class="legend" fill="#f58518">&#9679; msml</text>
+</svg>
+</div>
+
+<p>The four runs that hold a task's corpus best sit at registry wall_hours 3.95, 3.94, 18.76 and 19.71 — i.e. quality is not bought with clock time in general, but the two kimi bests are the two long ones.</p>
+<h3 id="distributions-the-packs-preserve">Distributions the packs preserve</h3>
+<div class="chart">
+<div class="chart-title">Session length and per-call latency, pooled raw samples per harness (lower is leaner)</div>
+<svg viewBox="0 0 640 186" class="chart-svg" role="img">
+<line x1="213.0" y1="10" x2="213.0" y2="154" class="grid"/>
+<text x="213.0" y="168" class="tick" text-anchor="middle">0</text>
+<line x1="339.7" y1="10" x2="339.7" y2="154" class="grid"/>
+<text x="339.7" y="168" class="tick" text-anchor="middle">1000</text>
+<line x1="466.3" y1="10" x2="466.3" y2="154" class="grid"/>
+<text x="466.3" y="168" class="tick" text-anchor="middle">2000</text>
+<line x1="592.9" y1="10" x2="592.9" y2="154" class="grid"/>
+<text x="592.9" y="168" class="tick" text-anchor="middle">3000</text>
+<text x="182" y="30" class="tick" text-anchor="end">cond session minutes</text>
+<line x1="213.0" y1="26" x2="213.4" y2="26" stroke="#4c78a8" stroke-width="1.5"/>
+<line x1="217.4" y1="26" x2="424.9" y2="26" stroke="#4c78a8" stroke-width="1.5"/>
+<rect x="213.4" y="18" width="4.0" height="16" rx="2" fill="#4c78a8" fill-opacity="0.45" stroke="#4c78a8"/>
+<line x1="214.2" y1="17" x2="214.2" y2="35" stroke="#4c78a8" stroke-width="2.5"/>
+<line x1="213.0" y1="21" x2="213.0" y2="31" stroke="#4c78a8" stroke-width="1.5"/>
+<line x1="424.9" y1="21" x2="424.9" y2="31" stroke="#4c78a8" stroke-width="1.5"/>
+<text x="182" y="64" class="tick" text-anchor="end">msml session minutes</text>
+<line x1="213.0" y1="60" x2="213.4" y2="60" stroke="#f58518" stroke-width="1.5"/>
+<line x1="215.5" y1="60" x2="360.1" y2="60" stroke="#f58518" stroke-width="1.5"/>
+<rect x="213.4" y="52" width="2.2" height="16" rx="2" fill="#f58518" fill-opacity="0.45" stroke="#f58518"/>
+<line x1="213.8" y1="51" x2="213.8" y2="69" stroke="#f58518" stroke-width="2.5"/>
+<line x1="213.0" y1="55" x2="213.0" y2="65" stroke="#f58518" stroke-width="1.5"/>
+<line x1="360.1" y1="55" x2="360.1" y2="65" stroke="#f58518" stroke-width="1.5"/>
+<text x="182" y="98" class="tick" text-anchor="end">cond llm gap seconds</text>
+<line x1="213.1" y1="94" x2="213.3" y2="94" stroke="#54a24b" stroke-width="1.5"/>
+<line x1="217.1" y1="94" x2="597.0" y2="94" stroke="#54a24b" stroke-width="1.5"/>
+<rect x="213.3" y="86" width="3.9" height="16" rx="2" fill="#54a24b" fill-opacity="0.45" stroke="#54a24b"/>
+<line x1="213.8" y1="85" x2="213.8" y2="103" stroke="#54a24b" stroke-width="2.5"/>
+<line x1="213.1" y1="89" x2="213.1" y2="99" stroke="#54a24b" stroke-width="1.5"/>
+<line x1="597.0" y1="89" x2="597.0" y2="99" stroke="#54a24b" stroke-width="1.5"/>
+<text x="182" y="132" class="tick" text-anchor="end">msml llm gap seconds</text>
+<line x1="213.1" y1="128" x2="213.2" y2="128" stroke="#e45756" stroke-width="1.5"/>
+<line x1="216.5" y1="128" x2="423.3" y2="128" stroke="#e45756" stroke-width="1.5"/>
+<rect x="213.2" y="120" width="3.3" height="16" rx="2" fill="#e45756" fill-opacity="0.45" stroke="#e45756"/>
+<line x1="213.7" y1="119" x2="213.7" y2="137" stroke="#e45756" stroke-width="2.5"/>
+<line x1="213.1" y1="123" x2="213.1" y2="133" stroke="#e45756" stroke-width="1.5"/>
+<line x1="423.3" y1="123" x2="423.3" y2="133" stroke="#e45756" stroke-width="1.5"/>
+</svg>
+</div>
+
+<div class="chart">
+<div class="chart-title">Experiment wall-clock duration in minutes, pooled over every timestamped row (cond runs longer experiments)</div>
+<svg viewBox="0 0 640 118" class="chart-svg" role="img">
+<line x1="211.9" y1="10" x2="211.9" y2="86" class="grid"/>
+<text x="211.9" y="100" class="tick" text-anchor="middle">0</text>
+<line x1="340.3" y1="10" x2="340.3" y2="86" class="grid"/>
+<text x="340.3" y="100" class="tick" text-anchor="middle">20</text>
+<line x1="468.7" y1="10" x2="468.7" y2="86" class="grid"/>
+<text x="468.7" y="100" class="tick" text-anchor="middle">40</text>
+<line x1="597.1" y1="10" x2="597.1" y2="86" class="grid"/>
+<text x="597.1" y="100" class="tick" text-anchor="middle">60</text>
+<text x="182" y="30" class="tick" text-anchor="end">cond experiments (n=340)</text>
+<line x1="213.1" y1="26" x2="219.8" y2="26" stroke="#4c78a8" stroke-width="1.5"/>
+<line x1="344.9" y1="26" x2="555.8" y2="26" stroke="#4c78a8" stroke-width="1.5"/>
+<rect x="219.8" y="18" width="125.1" height="16" rx="2" fill="#4c78a8" fill-opacity="0.45" stroke="#4c78a8"/>
+<line x1="239.4" y1="17" x2="239.4" y2="35" stroke="#4c78a8" stroke-width="2.5"/>
+<line x1="213.1" y1="21" x2="213.1" y2="31" stroke="#4c78a8" stroke-width="1.5"/>
+<line x1="555.8" y1="21" x2="555.8" y2="31" stroke="#4c78a8" stroke-width="1.5"/>
+<text x="182" y="64" class="tick" text-anchor="end">msml experiments (n=289)</text>
+<line x1="213.0" y1="60" x2="215.3" y2="60" stroke="#f58518" stroke-width="1.5"/>
+<line x1="305.3" y1="60" x2="597.0" y2="60" stroke="#f58518" stroke-width="1.5"/>
+<rect x="215.3" y="52" width="89.9" height="16" rx="2" fill="#f58518" fill-opacity="0.45" stroke="#f58518"/>
+<line x1="224.4" y1="51" x2="224.4" y2="69" stroke="#f58518" stroke-width="2.5"/>
+<line x1="213.0" y1="55" x2="213.0" y2="65" stroke="#f58518" stroke-width="1.5"/>
+<line x1="597.0" y1="55" x2="597.0" y2="65" stroke="#f58518" stroke-width="1.5"/>
+</svg>
+</div>
+
+<div class="chart">
+<div class="chart-title">Every timestamped experiment duration in the corpus, minutes (cond n=340, msml n=289) — msml&#x27;s mass sits under 2 minutes, cond&#x27;s clusters at the ~21-minute budget</div>
+<svg viewBox="0 0 640 300" class="chart-svg" role="img" aria-label="Every timestamped experiment duration in the corpus, minutes (cond n=340, msml n=289) — msml&#x27;s mass sits under 2 minutes, cond&#x27;s clusters at the ~21-minute budget">
+<line x1="64" y1="258.0" x2="624" y2="258.0" class="grid"/>
+<text x="58" y="262.0" class="tick" text-anchor="end">0</text>
+<line x1="64" y1="179.0" x2="624" y2="179.0" class="grid"/>
+<text x="58" y="183.0" class="tick" text-anchor="end">50</text>
+<line x1="64" y1="99.9" x2="624" y2="99.9" class="grid"/>
+<text x="58" y="103.9" class="tick" text-anchor="end">100</text>
+<line x1="64" y1="20.9" x2="624" y2="20.9" class="grid"/>
+<text x="58" y="24.9" class="tick" text-anchor="end">150</text>
+<line x1="92.6" y1="14" x2="92.6" y2="258" class="grid"/>
+<text x="92.6" y="274" class="tick" text-anchor="middle">0</text>
+<line x1="259.8" y1="14" x2="259.8" y2="258" class="grid"/>
+<text x="259.8" y="274" class="tick" text-anchor="middle">20</text>
+<line x1="427.0" y1="14" x2="427.0" y2="258" class="grid"/>
+<text x="427.0" y="274" class="tick" text-anchor="middle">40</text>
+<line x1="594.2" y1="14" x2="594.2" y2="258" class="grid"/>
+<text x="594.2" y="274" class="tick" text-anchor="middle">60</text>
+<rect x="64" y="14" width="560" height="244" class="frame"/>
+<text x="14" y="136.0" class="axis" text-anchor="middle" transform="rotate(-90 14 136.0)">count</text>
+<rect x="86.9" y="82.5" width="21.4" height="175.5" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="109.3" y="160.0" width="21.4" height="98.0" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="131.7" y="209.0" width="21.4" height="49.0" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="154.1" y="235.9" width="21.4" height="22.1" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="176.5" y="239.0" width="21.4" height="19.0" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="198.9" y="246.9" width="21.4" height="11.1" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="221.3" y="245.4" width="21.4" height="12.6" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="243.7" y="243.8" width="21.4" height="14.2" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="266.1" y="145.8" width="21.4" height="112.2" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="288.5" y="250.1" width="21.4" height="7.9" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="310.9" y="250.1" width="21.4" height="7.9" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="333.3" y="251.7" width="21.4" height="6.3" fill="#4c78a8" fill-opacity="0.45"/>
+<rect x="534.9" y="256.4" width="21.4" height="1.6" fill="#4c78a8" fill-opacity="0.45"/>
+<text x="74" y="30" class="legend" fill="#4c78a8">&#9632; cond (n=340)</text>
+<rect x="86.9" y="25.6" width="21.4" height="232.4" fill="#f58518" fill-opacity="0.45"/>
+<rect x="109.3" y="196.3" width="21.4" height="61.7" fill="#f58518" fill-opacity="0.45"/>
+<rect x="131.7" y="245.4" width="21.4" height="12.6" fill="#f58518" fill-opacity="0.45"/>
+<rect x="154.1" y="243.8" width="21.4" height="14.2" fill="#f58518" fill-opacity="0.45"/>
+<rect x="176.5" y="245.4" width="21.4" height="12.6" fill="#f58518" fill-opacity="0.45"/>
+<rect x="198.9" y="240.6" width="21.4" height="17.4" fill="#f58518" fill-opacity="0.45"/>
+<rect x="221.3" y="256.4" width="21.4" height="1.6" fill="#f58518" fill-opacity="0.45"/>
+<rect x="243.7" y="251.7" width="21.4" height="6.3" fill="#f58518" fill-opacity="0.45"/>
+<rect x="266.1" y="188.4" width="21.4" height="69.6" fill="#f58518" fill-opacity="0.45"/>
+<rect x="288.5" y="254.8" width="21.4" height="3.2" fill="#f58518" fill-opacity="0.45"/>
+<rect x="310.9" y="254.8" width="21.4" height="3.2" fill="#f58518" fill-opacity="0.45"/>
+<rect x="333.3" y="251.7" width="21.4" height="6.3" fill="#f58518" fill-opacity="0.45"/>
+<rect x="355.7" y="256.4" width="21.4" height="1.6" fill="#f58518" fill-opacity="0.45"/>
+<rect x="490.1" y="256.4" width="21.4" height="1.6" fill="#f58518" fill-opacity="0.45"/>
+<rect x="579.7" y="245.4" width="21.4" height="12.6" fill="#f58518" fill-opacity="0.45"/>
+<text x="74" y="46" class="legend" fill="#f58518">&#9632; msml (n=289)</text>
+</svg>
+</div>
+
+<div class="chart">
+<div class="chart-title">Agent session minutes and per-call LLM gap seconds — evenly subsampled raw values from the packs (200 per series per harness)</div>
+<svg viewBox="0 0 640 232" class="chart-svg" role="img">
+<line x1="213.0" y1="14" x2="213.0" y2="196" class="grid"/>
+<text x="213.0" y="210" class="tick" text-anchor="middle">0</text>
+<line x1="352.0" y1="14" x2="352.0" y2="196" class="grid"/>
+<text x="352.0" y="210" class="tick" text-anchor="middle">1000</text>
+<line x1="490.9" y1="14" x2="490.9" y2="196" class="grid"/>
+<text x="490.9" y="210" class="tick" text-anchor="middle">2000</text>
+<polygon points="190.0,48.0 193.6,48.0 200.8,48.0 207.9,32.0 215.1,14.0 222.2,27.3 229.4,43.8 236.6,45.5 243.8,46.7 250.9,47.7 258.1,48.0 265.2,47.9 272.4,47.8 279.6,47.9 286.8,47.9 293.9,47.8 301.1,47.9 308.2,47.9 315.4,47.8 322.6,47.9 329.8,48.0 336.9,48.0 344.1,48.0 351.2,48.0 358.4,48.0 365.6,48.0 372.8,48.0 379.9,48.0 387.1,48.0 394.2,48.0 401.4,48.0 408.6,48.0 415.8,48.0 422.9,48.0 430.1,48.0 437.2,48.0 444.4,48.0 451.6,48.0 458.8,48.0 465.9,48.0 473.1,48.0 480.2,48.0 487.4,48.0 494.6,48.0 501.8,48.0 508.9,48.0 516.1,48.0 523.2,48.0 530.4,48.0 537.6,48.0 544.8,48.0 551.9,48.0 559.1,48.0 566.2,48.0 573.4,48.0 580.6,48.0 587.8,48.0 594.9,48.0 602.1,48.0 609.2,48.0 616.4,48.0 620.0,48.0" fill="#4c78a8" fill-opacity="0.55" stroke="#4c78a8" stroke-width="1.2"/>
+<line x1="214.3" y1="14" x2="214.3" y2="48" stroke="#333" stroke-width="1.4" stroke-dasharray="3,2"/>
+<text x="182" y="42" class="tick" text-anchor="end">cond session minutes (n=200)</text>
+<polygon points="190.0,92.0 193.6,92.0 200.8,92.0 207.9,75.6 215.1,58.0 222.2,72.8 229.4,89.7 236.6,91.2 243.8,91.7 250.9,91.8 258.1,91.8 265.2,91.9 272.4,92.0 279.6,92.0 286.8,91.9 293.9,91.8 301.1,91.9 308.2,92.0 315.4,92.0 322.6,92.0 329.8,92.0 336.9,92.0 344.1,92.0 351.2,92.0 358.4,92.0 365.6,92.0 372.8,92.0 379.9,92.0 387.1,92.0 394.2,92.0 401.4,92.0 408.6,92.0 415.8,92.0 422.9,92.0 430.1,92.0 437.2,92.0 444.4,92.0 451.6,92.0 458.8,92.0 465.9,92.0 473.1,92.0 480.2,92.0 487.4,92.0 494.6,92.0 501.8,92.0 508.9,92.0 516.1,92.0 523.2,92.0 530.4,92.0 537.6,92.0 544.8,92.0 551.9,92.0 559.1,92.0 566.2,92.0 573.4,92.0 580.6,92.0 587.8,92.0 594.9,92.0 602.1,92.0 609.2,92.0 616.4,92.0 620.0,92.0" fill="#f58518" fill-opacity="0.55" stroke="#f58518" stroke-width="1.2"/>
+<line x1="213.8" y1="58" x2="213.8" y2="92" stroke="#333" stroke-width="1.4" stroke-dasharray="3,2"/>
+<text x="182" y="86" class="tick" text-anchor="end">msml session minutes (n=200)</text>
+<polygon points="190.0,136.0 193.6,136.0 200.8,136.0 207.9,119.8 215.1,102.0 222.2,116.4 229.4,133.2 236.6,134.0 243.8,134.7 250.9,135.6 258.1,135.8 265.2,135.8 272.4,135.6 279.6,135.5 286.8,135.8 293.9,136.0 301.1,136.0 308.2,136.0 315.4,136.0 322.6,136.0 329.8,136.0 336.9,136.0 344.1,136.0 351.2,136.0 358.4,136.0 365.6,136.0 372.8,136.0 379.9,136.0 387.1,136.0 394.2,136.0 401.4,136.0 408.6,136.0 415.8,136.0 422.9,136.0 430.1,136.0 437.2,136.0 444.4,136.0 451.6,136.0 458.8,136.0 465.9,136.0 473.1,136.0 480.2,136.0 487.4,136.0 494.6,136.0 501.8,136.0 508.9,136.0 516.1,136.0 523.2,136.0 530.4,136.0 537.6,136.0 544.8,136.0 551.9,136.0 559.1,136.0 566.2,136.0 573.4,136.0 580.6,136.0 587.8,135.9 594.9,135.8 602.1,135.9 609.2,136.0 616.4,136.0 620.0,136.0" fill="#54a24b" fill-opacity="0.55" stroke="#54a24b" stroke-width="1.2"/>
+<line x1="213.7" y1="102" x2="213.7" y2="136" stroke="#333" stroke-width="1.4" stroke-dasharray="3,2"/>
+<text x="182" y="130" class="tick" text-anchor="end">cond llm gap seconds (n=200)</text>
+<polygon points="190.0,180.0 193.6,180.0 200.8,180.0 207.9,164.2 215.1,146.0 222.2,158.9 229.4,175.9 236.6,177.7 243.8,178.6 250.9,179.2 258.1,179.2 265.2,179.4 272.4,179.6 279.6,179.7 286.8,179.9 293.9,179.9 301.1,179.8 308.2,179.9 315.4,180.0 322.6,179.9 329.8,179.8 336.9,179.9 344.1,180.0 351.2,180.0 358.4,180.0 365.6,180.0 372.8,180.0 379.9,180.0 387.1,180.0 394.2,180.0 401.4,180.0 408.6,180.0 415.8,180.0 422.9,180.0 430.1,180.0 437.2,180.0 444.4,180.0 451.6,180.0 458.8,180.0 465.9,180.0 473.1,180.0 480.2,180.0 487.4,180.0 494.6,180.0 501.8,180.0 508.9,180.0 516.1,180.0 523.2,180.0 530.4,180.0 537.6,180.0 544.8,180.0 551.9,180.0 559.1,180.0 566.2,180.0 573.4,180.0 580.6,180.0 587.8,180.0 594.9,180.0 602.1,180.0 609.2,180.0 616.4,180.0 620.0,180.0" fill="#e45756" fill-opacity="0.55" stroke="#e45756" stroke-width="1.2"/>
+<line x1="213.6" y1="146" x2="213.6" y2="180" stroke="#333" stroke-width="1.4" stroke-dasharray="3,2"/>
+<text x="182" y="174" class="tick" text-anchor="end">msml llm gap seconds (n=200)</text>
+</svg>
+</div>
+
+<h3 id="process-comparison">Process comparison</h3>
+<div class="chart">
+<div class="chart-title">Reliability and integrity per harness (lower is better on every row)</div>
+<div class="chart-group"><div class="chart-label group">attempts needed per cell</div><div class="chart-row grouped-row"><div class="chart-sublabel">cond</div><div class="chart-track"><div class="chart-bar" style="width:2.5%;background:#4c78a8"></div></div><div class="chart-value">1.24</div></div><div class="chart-row grouped-row"><div class="chart-sublabel">msml</div><div class="chart-track"><div class="chart-bar" style="width:4.1%;background:#f58518"></div></div><div class="chart-value">2.05</div></div></div>
+<div class="chart-group"><div class="chart-label group">% of scored rows misstating own metric by &gt;1%</div><div class="chart-row grouped-row"><div class="chart-sublabel">cond</div><div class="chart-track"><div class="chart-bar" style="width:48.0%;background:#4c78a8"></div></div><div class="chart-value">24</div></div><div class="chart-row grouped-row"><div class="chart-sublabel">msml</div><div class="chart-track"><div class="chart-bar" style="width:100.0%;background:#f58518"></div></div><div class="chart-value">50</div></div></div>
+<div class="chart-group"><div class="chart-label group">errored-yet-terminal rows per run</div><div class="chart-row grouped-row"><div class="chart-sublabel">cond</div><div class="chart-track"><div class="chart-bar" style="width:1.0%;background:#4c78a8"></div></div><div class="chart-value">0.1</div></div><div class="chart-row grouped-row"><div class="chart-sublabel">msml</div><div class="chart-track"><div class="chart-bar" style="width:4.0%;background:#f58518"></div></div><div class="chart-value">2</div></div></div>
+</div>
+
+<div class="chart">
+<div class="chart-title">Latency and spend per run — median of registry per-run values (lower is better)</div>
+<svg viewBox="0 0 640 130" class="chart-svg" role="img">
+<line x1="220.8" y1="14" x2="220.8" y2="104" class="grid"/>
+<text x="220.8" y="118" class="tick" text-anchor="middle">0</text>
+<line x1="309.7" y1="14" x2="309.7" y2="104" class="grid"/>
+<text x="309.7" y="118" class="tick" text-anchor="middle">25</text>
+<line x1="398.6" y1="14" x2="398.6" y2="104" class="grid"/>
+<text x="398.6" y="118" class="tick" text-anchor="middle">50</text>
+<line x1="487.5" y1="14" x2="487.5" y2="104" class="grid"/>
+<text x="487.5" y="118" class="tick" text-anchor="middle">75</text>
+<line x1="576.5" y1="14" x2="576.5" y2="104" class="grid"/>
+<text x="576.5" y="118" class="tick" text-anchor="middle">100</text>
+<text x="202" y="30" class="tick" text-anchor="end">registry median_queue_wait_minutes</text>
+<line x1="473.0" y1="26" x2="268.8" y2="26" stroke="#bbb" stroke-width="2"/>
+<circle cx="473.0" cy="26" r="6" fill="#4c78a8"/>
+<circle cx="268.8" cy="26" r="6" fill="#f58518"/>
+<text x="202" y="60" class="tick" text-anchor="end">tokens per run (millions)</text>
+<line x1="588.6" y1="56" x2="460.2" y2="56" stroke="#bbb" stroke-width="2"/>
+<circle cx="588.6" cy="56" r="6" fill="#4c78a8"/>
+<circle cx="460.2" cy="56" r="6" fill="#f58518"/>
+<text x="202" y="90" class="tick" text-anchor="end">strategist calls per scored experiment</text>
+<line x1="231.4" y1="86" x2="270.6" y2="86" stroke="#bbb" stroke-width="2"/>
+<circle cx="231.4" cy="86" r="6" fill="#4c78a8"/>
+<circle cx="270.6" cy="86" r="6" fill="#f58518"/>
+<text x="210" y="12" class="legend" fill="#4c78a8">&#9679; cond</text>
+<text x="330" y="12" class="legend" fill="#f58518">&#9679; msml</text>
+</svg>
+</div>
+
+<h3 id="the-reasonfix-change-per-cell">The reasonfix change, per cell</h3>
+<div class="chart">
+<div class="chart-title">Referee best as a ratio to the task&#x27;s best (lower is better) — best pre-fix repeat vs the reasonfix run</div>
+<svg viewBox="0 0 640 300" class="chart-svg" role="img">
+<text x="190" y="16" class="axis" text-anchor="middle">pre-fix best</text>
+<text x="450" y="16" class="axis" text-anchor="middle">reasonfix</text>
+<line x1="190" y1="24" x2="190" y2="276" class="frame"/>
+<line x1="450" y1="24" x2="450" y2="276" class="frame"/>
+<line x1="190" y1="252.1" x2="450" y2="256.9" stroke="#4c78a8" stroke-width="2.2"/>
+<circle cx="190" cy="252.1" r="4" fill="#4c78a8"/>
+<circle cx="450" cy="256.9" r="4" fill="#4c78a8"/>
+<text x="182" y="256.1" class="tick" text-anchor="end">d5_rfq glm cond 1.026</text>
+<text x="458" y="260.9" class="tick">1</text>
+<line x1="190" y1="240.5" x2="450" y2="247.3" stroke="#f58518" stroke-width="2.2"/>
+<circle cx="190" cy="240.5" r="4" fill="#f58518"/>
+<circle cx="450" cy="247.3" r="4" fill="#f58518"/>
+<text x="182" y="244.5" class="tick" text-anchor="end">d5_rfq glm msml 1.0893</text>
+<text x="458" y="251.3" class="tick">1.0522</text>
+<line x1="190" y1="198.9" x2="450" y2="256.9" stroke="#54a24b" stroke-width="2.2"/>
+<circle cx="190" cy="198.9" r="4" fill="#54a24b"/>
+<circle cx="450" cy="256.9" r="4" fill="#54a24b"/>
+<text x="182" y="202.9" class="tick" text-anchor="end">d7_payup deepseek cond 1.3163</text>
+<text x="458" y="260.9" class="tick">1</text>
+<line x1="190" y1="231.0" x2="450" y2="105.6" stroke="#e45756" stroke-width="2.2"/>
+<circle cx="190" cy="231.0" r="4" fill="#e45756"/>
+<circle cx="450" cy="105.6" r="4" fill="#e45756"/>
+<text x="182" y="235.0" class="tick" text-anchor="end">d7_payup deepseek msml 1.1411</text>
+<text x="458" y="109.6" class="tick">1.8252</text>
+<line x1="190" y1="166.8" x2="450" y2="178.7" stroke="#72b7b2" stroke-width="2.2"/>
+<circle cx="190" cy="166.8" r="4" fill="#72b7b2"/>
+<circle cx="450" cy="178.7" r="4" fill="#72b7b2"/>
+<text x="182" y="170.8" class="tick" text-anchor="end">d7_payup glm cond 1.4913</text>
+<text x="458" y="182.7" class="tick">1.4266</text>
+<line x1="190" y1="178.0" x2="450" y2="38.1" stroke="#eeca3b" stroke-width="2.2"/>
+<circle cx="190" cy="178.0" r="4" fill="#eeca3b"/>
+<circle cx="450" cy="38.1" r="4" fill="#eeca3b"/>
+<text x="182" y="182.0" class="tick" text-anchor="end">d7_payup glm msml 1.4302</text>
+<text x="458" y="42.1" class="tick">2.1933</text>
+<line x1="190" y1="250.5" x2="450" y2="243.0" stroke="#b279a2" stroke-width="2.2"/>
+<circle cx="190" cy="250.5" r="4" fill="#b279a2"/>
+<circle cx="450" cy="243.0" r="4" fill="#b279a2"/>
+<text x="182" y="254.5" class="tick" text-anchor="end">domain2 glm cond 1.0346</text>
+<text x="458" y="247.0" class="tick">1.0755</text>
+<line x1="190" y1="199.4" x2="450" y2="256.4" stroke="#9d755d" stroke-width="2.2"/>
+<circle cx="190" cy="199.4" r="4" fill="#9d755d"/>
+<circle cx="450" cy="256.4" r="4" fill="#9d755d"/>
+<text x="182" y="203.4" class="tick" text-anchor="end">domain4 deepseek cond 1.3135</text>
+<text x="458" y="260.4" class="tick">1.0026</text>
+<line x1="190" y1="252.1" x2="450" y2="250.6" stroke="#4c78a8" stroke-width="2.2"/>
+<circle cx="190" cy="252.1" r="4" fill="#4c78a8"/>
+<circle cx="450" cy="250.6" r="4" fill="#4c78a8"/>
+<text x="182" y="256.1" class="tick" text-anchor="end">domain4 deepseek msml 1.0261</text>
+<text x="458" y="254.6" class="tick">1.0343</text>
+<line x1="190" y1="248.1" x2="450" y2="254.4" stroke="#f58518" stroke-width="2.2"/>
+<circle cx="190" cy="248.1" r="4" fill="#f58518"/>
+<circle cx="450" cy="254.4" r="4" fill="#f58518"/>
+<text x="182" y="252.1" class="tick" text-anchor="end">domain4 glm cond 1.0476</text>
+<text x="458" y="258.4" class="tick">1.0136</text>
+<line x1="190" y1="252.0" x2="450" y2="233.9" stroke="#54a24b" stroke-width="2.2"/>
+<circle cx="190" cy="252.0" r="4" fill="#54a24b"/>
+<circle cx="450" cy="233.9" r="4" fill="#54a24b"/>
+<text x="182" y="256.0" class="tick" text-anchor="end">domain4 glm msml 1.0265</text>
+<text x="458" y="237.9" class="tick">1.1254</text>
+</svg>
+</div>
+
+<p>cond improves in 5 of 6 cells, msml in 1 of 5. With n=2 repeats in most cells the delta <em>is</em> the replication range — the pattern across cells, not any single arrow, is the evidence.</p>
+<hr />
+<h2 id="4-findings-in-plain-language">4. Findings, in plain language</h2>
+<p><strong>What cond does well.</strong></p>
+<ol>
+<li><strong>It keeps an honest board.</strong> cond's rows agree with an independent recompute: 24% of rows off by &gt;1% vs msml's 50%, median deviation 3.3e-07 vs 1.08e-02, worst case 14.5% vs 1493%. The referee's own coarser "reproduced" flag agrees pre-reasonfix and stops discriminating in reasonfix, where the tighter test still separates them (cond 0/12 rows off on both models, msml 12/12 at ≤5%). <em>(finding #6)</em></li>
+<li><strong>Its verifier finds real problems.</strong> In <code>d7r_dsv4_cond</code> the arbiter re-implemented the champion's features from scratch and quantified a same-day-borrow leak — 2.746 leaky vs 3.000 clean — and also caught the <em>critic's</em> clean variant being buggy. Conductor directives are cited verbatim inside experiment hypotheses ("Conductor directive d-e09d89 flags this"; "Directive d-6a403b requests a home-run attempt"), including a directive mandating that the referee-recomputed metric be written into <code>results/metrics.json</code>. <em>(finding #19)</em></li>
+<li><strong>It elicits about twice the engineering per experiment</strong> from the same models: 769.5 vs 407.25 median code lines per experiment, 22.5 vs 12.5 functions, 158 vs 118.5 preserved files, 24 vs 12 report/note files — with zero unparseable Python files on either side. <em>(finding #15)</em></li>
+<li><strong>It survives infrastructure trouble in-process.</strong> cond needed 1.24 attempts per cell to msml's 2.05; on the storm evening the cond runs absorbed 251-4,098 retries and finished, while four msml cells were aborted and relaunched. <em>(findings #3, #5)</em></li>
+</ol>
+<p><strong>What cond does badly.</strong></p>
+<ol start="5">
+<li><strong>Queue latency.</strong> Registry <code>search.median_queue_wait_minutes</code> is 70.9 at the cond median vs msml's 13.5, and reaches 256.3 / 254.4 / 222.9 / 199.1 in four cond runs. A hypothesis can idle for hours before it starts. <em>(finding #12)</em></li>
+<li><strong>Token cost, mostly not where people assume.</strong> In the 4.3x case (<code>d2_glm_cond</code>, 520.7M vs its msml pair's 121.5M): the strategist seat alone is 210.5M over 3,606 calls at 58,376 tokens per call; conductor+verifier are 110.0M (21.1%); 444 failed <code>read_file</code> calls cost ~25.9M (5.0%); the history was entirely uncached while each request repeated 93.28% of the previous one verbatim. Corpus-wide the extra seats are 21.8% of cond's 2,171.4M tokens. <em>(findings #7, #18)</em></li>
+<li><strong>Verification is scheduled, not requested, and governance is unacknowledged.</strong> 115 verifier seats and 1,097 verification artifacts against 34 <code>request_verification</code> calls; only 11.5% of cond rows cite a directive, and those rows sit at within-run score percentile 0.463 against 0.507 for the rest — a 0.044 nudge with no dispersion computed, i.e. neither a lift nor its absence. <code>d7r_dsv4_cond</code> logged <strong>zero</strong> directive acknowledgements. <em>(findings #7, #19)</em></li>
+</ol>
+<p><strong>What msml does well.</strong></p>
+<ol start="8">
+<li><strong>Its completion gate is correctly designed.</strong> <code>complete_research</code> refuses while work is outstanding — 6 of the 8 calls I inspected were refused with the blocking rows named — so msml's fast finishes are not abandonment. cond's two observed run-end gates police elapsed time (<code>min_runtime_hours=6.0</code>) and analysed-row count (<code>min_analyzed_before_end=20</code>), not outstanding work. <em>(finding #13)</em></li>
+<li><strong>Low latency and lower spend:</strong> registry median queue wait 13.5 minutes, 67.3M tokens per run, shorter sessions and shorter LLM gaps at every quartile.</li>
+</ol>
+<p><strong>What msml does badly.</strong></p>
+<ol start="10">
+<li><strong>The phase-2 gate can kill a healthy run.</strong> In the archived <code>d2r_glm_msml.failed_phase2gate_0508</code>, all eight critic transcripts returned <strong>PASS</strong>; the builder kept re-entering the loop over the critic's optional notes under a run-time "fix all issues" instruction; the log recorded <code>Max fix iterations reached during critic loop — aborting Phase 2</code> at 04:39:03; four minutes later the supervisor reported <code>Phase 2 Framework Review — VERDICT: PASS</code>; the process exited <strong>code=1</strong> at 04:44:00 after 6h20m, and the cell needed two further attempts. The loop exits on a counter, not on a verdict, and the counter is fatal. <em>(finding #4)</em></li>
+<li><strong>Failed experiments reach the board.</strong> 40 errored-yet-terminal rows across 20 msml runs vs 2 across 21 cond runs. Most publish null metrics, but some publish real ones: <code>ensemble_tsmixer_ridge</code> carries <code>error='SLURM TIMEOUT'</code> and <code>rmse_pooled 0.0224</code> — and is the <strong>top entry on msml's side of pair domain4_deepseek</strong>, inflating that margin (it did not decide the pair; the runner-up at 0.023256 would still have won). <em>(finding #11)</em></li>
+<li><strong>Prompt-template bug.</strong> msml agents were sent to read <code>{workspace}/agenda.md</code> with the placeholder unexpanded 12 times, plus 11 more for <code>{workspace}/private/proxy_state.md</code> — a rendering defect, not a model error. <em>(finding #8)</em></li>
+</ol>
+<p><strong>Shared defects (both harnesses).</strong></p>
+<ol start="13">
+<li><strong>Prompts promise artifacts the pipeline doesn't write.</strong> 959 missing-file <code>read_file</code> failures over 21 cond runs and 881 over 20 msml runs — the same order. Same two dominant families on both sides: <code>experiments/&lt;exp&gt;/debrief.md</code> (393 cond / 204 msml) and <code>experiments/&lt;exp&gt;/results/metrics.json</code> (136 / 87), both named verbatim in <code>adapter/phase3_reporter.md</code>. <em>(finding #8)</em></li>
+<li><strong>Reasoning-trace replay is fragile under connection failure.</strong> 18 of 41 runs (all pre-2026-08-07 GLM/deepseek: 4 deepseek, 14 glm) sent <strong>0%</strong> of requests with a trace while their responses produced them. After the fix, replay is 92.4-97.1% — except <code>d5r_glm_cond</code> at 74.47%, whose 511 unanswered requests, 4,098 retries and 51 tracebacks show that a dropped response takes its trace with it. Persist the trace with the request record. <em>(finding #9)</em></li>
+</ol>
+<p><strong>Model behaviour.</strong></p>
+<ol start="15">
+<li><strong>deepseek-v4-flash is the sloppiest on tool protocol</strong>, and it is the <em>model</em>, not the harness: it invents names under both harnesses (<code>cat</code>, <code>_shell_exec</code>, <code>memorro_search</code>, <code>execute</code>, <code>exec_script</code>, <code>write_debrief</code>, <code>file_write</code>) and alone corrupts the tool-name field with its own tool-call syntax. Both harnesses answer identically with a hard <code>[ERROR] Unknown tool:</code>; glm-5.2 invented <strong>zero</strong> names in 70k invocations. Rates are tiny (≤1.42 per 1k), so it is a tie-breaker. <em>(finding #10)</em></li>
+<li><strong>kimi-k3 buys quality with clock time.</strong> Best median normalised quality and two of four task bests, at registry wall_hours median 18.76 h against glm's 4.78 h — and roughly half glm's tokens. <em>(finding #14)</em></li>
+</ol>
+<hr />
+<h2 id="5-corrections-and-retractions">5. Corrections and retractions</h2>
+<ul>
+<li><strong>Operator fact corrected.</strong> "511 agent deaths in <code>d5r_glm_cond</code>" is not deaths: 511 is the count of agent-visible API error events (identical to its requests-minus-responses gap). Actual seats that issued a request and never got a reply: <strong>11</strong>. <em>(finding #5)</em></li>
+<li><strong>Planning hypothesis retracted.</strong> The plan predicted the 444 strategist <code>read_file</code> failures would be "one repeated bad path"; they are <strong>25 distinct paths in five families</strong>, and the same failure mode occurs at essentially the same per-run rate in msml. A single-path fix would have removed almost none of it. <em>(finding #8)</em></li>
+<li><strong>Planning framing retracted.</strong> The plan treated <code>negative results</code> as deliberately-logged negative findings (a virtue, "kimi msml d4 = 6"). The registry defines it as <em>experiments that errored yet still carry a metric</em> — so msml's 40-vs-2 is an integrity liability, not a scientific-honesty credit. <em>(finding #11)</em></li>
+<li><strong>Suspicion of msml "early quitting" withdrawn.</strong> <code>d4_dsv4_msml</code>'s "1 scored row of 15" is a referee scoring-coverage artefact; all 15 rows had finished before completion was declared, and the same run put 11 entries on the pair leaderboard. Its registry time_to_best_hours of 0.51 is real, but it is one tail of a distribution whose median cross-pair difference is -0.08 h. <em>(finding #13)</em></li>
+<li><strong>Undeclared confound added.</strong> The reasonfix era also switched <strong>prompt caching</strong> on: cache-read fraction 0.0-0.011 in all 18 pre-fix GLM/DS runs, 0.582-0.933 in all 12 reasonfix runs, 0.003-0.033 in all 11 kimi runs. Cross-era token/cost comparisons for GLM/DS are confounded. <em>(finding #16)</em></li>
+<li><strong>Instrumentation artefact.</strong> <code>d2v_k3_msml</code>'s apparent 50% seat-completion is not 58 dead agents: 56 of its 117 "sessions" are experiment-named transcripts with zero API calls. <em>(finding #5)</em></li>
+</ul>
+<hr />
+<h2 id="6-what-to-change-first">6. What to change first</h2>
+<h3 id="cond-ranked"><code>cond</code> — ranked</h3>
+<ol>
+<li><strong>Cut queue latency.</strong> Registry median 70.9 min per run, up to 256.3; msml shows 13.5 is achievable under the same contention. <em>(finding #12)</em></li>
+<li><strong>Rotate or summarise the strategist session.</strong> 210.5M tokens over 3,606 calls at 58,376 tokens/call in one run is the largest single line item in the corpus. <em>(finding #18)</em></li>
+<li><strong>Keep prompt caching on permanently.</strong> cond's reasonfix runs cache 0.746-0.854 of input; its pre-fix runs cached nothing while repeating 93% of each request verbatim. <em>(findings #16, #18)</em></li>
+<li><strong>Make the artifact contract true.</strong> Write <code>debrief.md</code>/<code>results/metrics.json</code> stubs (or expose a board API) — 393 + 136 dead reads chase files the prompts promise. <em>(finding #8)</em></li>
+<li><strong>Trim scheduled verification, keep the arbiter.</strong> 115 verifier seats / 1,097 artifacts for 34 requests is over-provisioned; the recompute-and-arbitrate function is the part that earned its keep. <em>(findings #7, #19)</em></li>
+<li><strong>Make directives auditable.</strong> 11.5% citation rate and zero acknowledgements in the run examined; require an ack or drop the ceremony. <em>(findings #7, #19)</em></li>
+<li><strong>Add an active-work check to run-end.</strong> Elapsed-time and analysed-count floors do not know what is still running; msml's guard shows the shape of the fix. <em>(finding #13)</em></li>
+</ol>
+<h3 id="msml-ranked"><code>msml</code> — ranked</h3>
+<ol>
+<li><strong>Fix the phase-2 gate.</strong> Exit the critic loop on the first PASS; make the iteration cap a warning that proceeds with the last passing build. This bug burned 6h20m and forced two extra attempts on one cell. <em>(finding #4)</em></li>
+<li><strong>Quarantine errored experiments.</strong> 40 rows finished as <code>done</code> while carrying an error, and some carried metrics onto the leaderboard, including the top entry of one pair. Mark them partial and exclude from ranking. <em>(finding #11)</em></li>
+<li><strong>Adopt an in-run recompute contract.</strong> 50% of msml's rows misstate their own metric by &gt;1%, worst case 1493%; cond's directive forcing a referee recompute into <code>results/metrics.json</code> is the mechanism to copy. <em>(findings #6, #19)</em></li>
+<li><strong>Substitute <code>{workspace}</code> in prompt templates.</strong> 23 tool calls went out with the literal placeholder in the path. <em>(finding #8)</em></li>
+<li><strong>Reduce attempts-to-completion.</strong> 2.05 attempts per cell, and one cell (kimi/domain4/vary) lost after four tries — improve resume-after-outage rather than relying on relaunch. <em>(finding #3)</em></li>
+<li><strong>Same artifact-contract fix as cond</strong> (<code>debrief.md</code>, <code>metrics.json</code>: 204 + 87 dead reads). <em>(finding #8)</em></li>
+<li><strong>Trim the strategist's polling.</strong> 14 strategist calls per scored experiment vs cond's 3, with one run at 828. <em>(finding #12)</em></li>
+</ol>
+<h3 id="infrastructure-owner-of-the-serving-path">Infrastructure (owner of the serving path)</h3>
+<ol>
+<li><strong>Persist reasoning traces with the request record</strong> so replay survives dropped responses (<code>d5r_glm_cond</code>: 74.47% replay under storm vs 92.4-97.1% normally). <em>(finding #9)</em></li>
+<li><strong>Find out whether kimi can cache.</strong> kimi sits at 0.003-0.033 cache-read fraction in every era it appears in, and has no cell in the caching-enabled era — so kimi's token bill may be inflated for a fixable reason. <em>(finding #16)</em></li>
+</ol>
+<hr />
+<h2 id="7-what-stays-unresolved-and-why">7. What stays unresolved, and why</h2>
+<table>
+<thead>
+<tr>
+<th>question</th>
+<th>status</th>
+<th>why, and what would settle it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Is cond's advantage <em>caused</em> by reasoning replay?</td>
+<td><strong>unresolved; association strong (p=0.0048)</strong></td>
+<td>The reasonfix change bundles replay with prompt caching, and kimi — the era control — has no reasonfix cell. One run with replay off and caching on (or the reverse) settles it.</td>
+</tr>
+<tr>
+<td>Did the reasonfix treatment move quality beyond noise in any single cell?</td>
+<td><strong>unresolvable as posed</strong></td>
+<td>With n=2 repeats the treatment delta and the replication range are the same number. Only the 5/6-vs-1/5 sign pattern is informative. n≥3 per cell fixes this.</td>
+</tr>
+<tr>
+<td>Which model per agent seat?</td>
+<td><strong>untestable in this corpus</strong></td>
+<td>All 41 runs are single-model in every transcript (verified per run); the campaign's mixed-model attempts were aborted before completion.</td>
+</tr>
+<tr>
+<td>Does cond's verifier improve row-level scores?</td>
+<td><strong>unresolved</strong></td>
+<td>Its effect is visible in integrity (finding #6) and one traced leak audit; the only row-level proxy available (directive citation) gives 0.463 vs 0.507 with no dispersion — neither a lift nor its absence. Verification was scheduled per champion, not per row, so verifier-conditioned rows cannot be isolated.</td>
+</tr>
+<tr>
+<td>Is domain2 a cond win?</td>
+<td><strong>no verdict possible</strong></td>
+<td>The referee marks all four domain2 pairs incomparable (per-run held-out slices). Within-run bests exist (cond+kimi 0.78205 is the lowest recomputed value) but cannot serve as a cross-harness verdict.</td>
+</tr>
+<tr>
+<td>Why did the reasonfix storms hit only cond's cells?</td>
+<td><strong>unresolved</strong></td>
+<td>Consistent with cond retrying in-process while msml attempts were aborted and relaunched (four msml reasonfix cells carry <code>aborted_glmdown_2144</code>), but launch scheduling relative to the two serving restarts is not recorded in the preserved artifacts.</td>
+</tr>
+</tbody>
+</table>
+</body></html>
