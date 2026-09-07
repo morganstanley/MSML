@@ -1,0 +1,105 @@
+[project]
+name = "alpha-lab"
+version = "0.1.0"
+description = "Alpha Lab -- Autonomous Research Agent"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.4.6,<3.0",
+    "pandas<3.0",
+    # LLM providers
+    "openai>=2.37.0",
+    "anthropic>=0.40.0",
+    "boto3>=1.43.12",
+    "httpx2>=2.7.0,<3",
+    # Web server
+    "fastapi>=0.136.1",
+    "uvicorn[standard]>=0.47.0",
+    "watchfiles>=1.2.0",
+    # Matches mlflow-skinny's own constraint (mlflow==3.15.0 pins mlflow-skinny==3.15.0)
+    "starlette<2",
+    # CLI
+    "click>=8.4.0,<9.0",
+    "rich>=14.0.0",
+    "prompt-toolkit>=3.0.50",
+    # Utilities
+    "tiktoken>=0.13.0",
+    "cachetools>=7.1.4",
+    "pyyaml>=6.0",
+    "pydantic>=2.13,<3.0",
+    "sqlite-utils>=3.39",
+    "pydantic-evals>=2.0,<3.0",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "opentelemetry-exporter-prometheus-remote-write",
+    "python-snappy",
+    "mlflow==3.15.0",
+    "jinja2>=3.1.6,<3.2", # Transitive dependency made concrete
+]
+
+[project.scripts]
+alpha-lab = "alpha_lab.cli:main"
+alpha-lab-run = "alpha_lab.run:run_main"
+alpha-lab-serve = "alpha_lab.server:serve_main"
+alpha-lab-prefetch-token = "alpha_lab.prefetch_token:main"
+alpha-lab-evaluate = "alpha_lab.evaluations:main"
+alpha-lab-doctor = "alpha_lab.doctor:main"
+generate-synthetic-data = "alpha_lab.generate_synthetic_data:main"
+alpha-lab-copy-workspace = "alpha_lab.benchmarks.scripts.copy_workspace:cli"
+alpha-lab-register-workspaces = "alpha_lab.benchmarks.scripts.register_workspaces:cli"
+alpha-lab-remove-benchmark = "alpha_lab.benchmarks.scripts.remove_benchmark:cli"
+alpha-lab-create-suite = "alpha_lab.benchmarks.scripts.create_suite:cli"
+alpha-lab-run-benchmarks = "alpha_lab.benchmarks.scripts.run_benchmarks:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alpha_lab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not slow'"
+markers = [
+    "slow: exercises a scale limit; deselected by default (run with -m slow)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:ldap3.utils.asn1",
+]
+env = [
+    "LITELLM_LOCAL_MODEL_COST_MAP=true",
+]
+
+[project.optional-dependencies]
+dev = [
+    "jira>=3.10",
+    "pytest>=9.0.2",
+    "pytest-env>=1.0.0",
+    "tabulate>=0.9",
+]
+
+ms_onprem = [
+    "morganstanley-sec-python-scvlib==1.1.11",
+    "morganstanley-aidp-aidevplatformaccess==2025.2.4.20",
+    "morganstanley-python-directory",
+    # aidevplatformaccess's AIDevPlatformAuth subclasses httpx.Auth directly, so
+    # prefetch_token.py / scalar_2_sample_setup.py must stay on real httpx
+    # AIDP is aware and is actively working on a migration
+    "httpx>=0.28.1",
+]
+
+# Synthetic tabular benchmark generation. Required for
+# alpha_lab.benchmarks.generators.structural_causal.StructuralCausalGenerator.
+benchmarks = [
+    "tabicl",
+    "xgboost",
+    "scipy",
+    "joblib",
+]
+
+# CI hosts don't have a GPU, so it's pointless to download 2GB of cuda
+# assets.  Note that these are mutually exclusive when installed with pip
+torch-cpu = ["torch==2.9.1+cpu"]
+torch-gpu = ["torch==2.9.1+cu126"]
+# GHA uses msartaz.jfrog.io which doesn't have qualified packages
+torch-gha = ["torch==2.9.1"]

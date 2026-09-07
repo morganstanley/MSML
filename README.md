@@ -1,78 +1,151 @@
-![Lifecycle Active](https://img.shields.io/badge/Lifecycle-Active-brightgreen)
+<div align="center">
 
-# Morgan Stanley Machine Learning Research
+<img src="header.png" alt="Alpha Lab" width="600">
 
-This respository contains code for papers and projects published by
-the Morgan Stanley Machine Learning Research team.
+[![Python](https://github.com/your-org/alpha-lab/actions/workflows/pr-build-python.yml/badge.svg?branch=main)](https://github.com/your-org/alpha-lab/actions/workflows/pr-build-python.yml)
+[![Frontend](https://github.com/your-org/alpha-lab/actions/workflows/pr-build-frontend.yml/badge.svg?branch=main)](https://github.com/your-org/alpha-lab/actions/workflows/pr-build-frontend.yml)
 
-## Who We Are
+</div>
 
-The Machine Learning Research team at Morgan Stanley harnesses the
-advances of machine learning techniques across the firm. The ML
-Research team is comprised of hyper-specialist researchers who work on
-fundamental and complex problems. The team has worked in a wide
-variety of areas including time series analysis, recommender systems,
-network theory, NLP for finance, fairness, privacy, and more. The
-central ML Research team spearheads engagements with academia, both by
-collaborating with university labs and by publishing in top-tier
-conferences.
+---
 
-## Papers
-
-See also: https://www.morganstanley.com/about-us/technology/machine-learning-research-papers
-
-| Year | Venue | Title | Code |
-| ---- | ----- | ----- | ---- |
-| 2026 | ACL Findings | [AHA: Aligning Large Audio-Language Models for Reasoning Hallucinations via Counterfactual Hard Negatives](https://arxiv.org/abs/2512.24052) | [code](papers/AHA_Aligning_Large_Audio_Language_Models_for_Reasoning_Hallucinations_via_Counterfactual_Hard_Negatives) |
-| 2026 | COLM Workshop | [AriadneMem: Threading the Maze of Lifelong Memory for LLM Agents](https://arxiv.org/abs/2603.03290) | [code](papers/AriadneMem_Threading_the_Maze_of_Lifelong_Memory_for_LLM_Agents) |
-| 2026 | COLM Workshop | [Context Pruning for Coding Agents via Multi-Rubric Latent Reasoning](https://arxiv.org/abs/2605.15315) | [code](papers/Context_Pruning_for_Coding_Agents_via_Latent_Multi_Rubric_Reasoning) |
-| 2026 | CVPR | [LLaDA-MedV: Exploring Large Language Diffusion Models for Biomedical Image Understanding](https://arxiv.org/abs/2508.01617) | [code](papers/LLaDA-MedV_Exploring_large_language_diffusion_models_for_biomedical_image_understanding) |
-| 2026 | CVPR | [OTPrune: Distribution-Aligned Visual Token Pruning via Optimal Transport](https://arxiv.org/abs/2602.20205) | [code](papers/OTPrune_Distribution_Aligned_Visual_Token_Pruning_via_Optimal_Transport) |
-| 2026 | WACV | [Prompt-OT: An Optimal Transport Regularization Paradigm for Knowledge Preservation in Vision-Language Model Adaptation](https://arxiv.org/abs/2503.08906) | [code](papers/Prompt_OT_An_Optimal_Transport_Regularization) |
-| 2026 | ICML | [How Does the Pretraining Distribution Shape In-Context Learning? A Fundamental Trade-Off](https://arxiv.org/abs/2510.01163) | [code](papers/ICL_Pretraining_Tradeoff) |
-| 2026 | TMLR | [Learning to Strategically Acquire Resources in Competition](https://arxiv.org/pdf/2606.06882) | [code](papers/Strategic_Resource_Acquisition/)
-| 2026 | ICLR | [Improving Reasoning for Diffusion Language Models via Group Diffusion Policy Optimization](https://arxiv.org/abs/2510.08554) | [code](papers/GDPO_Improving_Reasoning_for_Diffusion_Language_Models_via_Group_Diffusion_Policy_Optimization) |
-| 2026 | ICLR | [Ultra-Fast Language Generation via Discrete Diffusion Divergence Instruct](https://arxiv.org/abs/2509.25035) | [code](papers/DiDi-Instruct_Ultra-Fast_Language_Generation_via_Discrete_Diffusion_Divergence_Instruct) |
-| 2026 | ICML | [Generalized Discrete Diffusion with Self-Correction](https://arxiv.org/abs/2603.02230) | [code](papers/SCDD_Generalized_Discrete_Diffusion_with_Self-Correction) |
-| 2025 | arXiv | [Chart-RVR: Reinforcement Learning with Verifiable Rewards for Explainable Chart Reasoning](https://arxiv.org/abs/2510.10973) | [code](papers/Chart-RVR_Reinforcement_Learning_with_Verifiable_Rewards_for_Explainable_Chart_Reasoning) |
-| 2025 | ICML | [Privacy Amplification by Structured Subsampling for Deep Differentially Private Time Series Forecasting](https://arxiv.org/abs/2502.02410) | [code](papers/Deep_Differentially_Private_Time_Series_Forecasting) |
-| 2025 | TMLR | [Reweighting Improves Conditional Risk Bounds](https://arxiv.org/abs/2501.02353) | [code](papers/Reweighting_Improves_Conditional_Risk_Bounds) |
-| 2025 | AISTATS | [Variational Schrödinger Momentum Diffusion](https://arxiv.org/abs/2501.16675) | [code](papers/Variational_Schrodinger_Momentum_Diffusion) |
-| 2024 | UAI | [Reflected Schrodinger Bridge for Constrained Generative Modeling](https://arxiv.org/abs/2401.03228) | [code](papers/Reflected_Schrodinger_Bridge) |
-| 2024 | NeurIPS | [Recurrent Interpolants for Probabilistic Time Series Prediction](https://arxiv.org/abs/2409.11684) | [code](papers/Recurrent_Interpolants) |
-| 2024 | NeurIPS | [Efficient and Sharp Off-policy Evaluation in Robust Markov Decision Processes](https://arxiv.org/abs/2404.00099) | [code](papers/Efficient_and_Sharp_Robust_OPE)
-| 2024 | ICML | [Variational Schrodinger Diffusion Models](https://arxiv.org/pdf/2405.04795) | [code](papers/Variational_Schrodinger_Diffusion_Model)
-| 2024 | ICML | [Constrained Exploration via Reflected Replica Exchange Stochastic Gradient Langevin Dynamics](https://arxiv.org/abs/2405.07839) | [code](papers/Reflected_Replica_Exchange_Langevin_Dynamics)
-| 2024 | AISTATS | [Neural McKean-Vlasov Processes: Distributional Dependence in Diffusion Processes](https://arxiv.org/abs/2404.09402) | [code](papers/Neural_McKean_Vlasov_Processes)
-| 2024 | AISTATS | [Accelerating Approximate Thompson Sampling with Underdamped Langevin Monte Carlo](https://arxiv.org/abs/2401.11665) | [code](papers/Thompson_Sampling_with_Underdamped_Langevin_Monte_Carlo)
-| 2023 | UAI | [Short-Term Temporal Dependency Detection Under Heterogeneous Event Dynamic With Hawkes Processes](https://arxiv.org/abs/2305.18412) | [code](papers/Coupling_Point_Processes)
-| 2023 | UAI | [Information Theoretic Clustering via Divergence Maximization Among Cluster](https://proceedings.mlr.press/v216/garg23a.html) | [code](papers/Clustering_via_Dual_Divergence_Maximization)
-| 2023 | UAI | [Inference and Sampling of Point Processes from Diffusion Excursions](https://arxiv.org/abs/2306.00762) | [code](papers/Diffusion_Excursion_Point_Process)
-| 2023 | UAI | [In- or Out-of-Distribution Detection via Dual Divergence Estimation](https://proceedings.mlr.press/v216/garg23b) | [code](papers/OOD_Detection_via_Dual_Divergence_Estimation)
-| 2023 | TMLR | [Learning to Abstain From Uninformative Data](https://arxiv.org/abs/2309.14240) | [code](papers/Learn_to_Abstain)
-| 2023 | ICML | [Provably Convergent Schrödinger Bridge with Applications to Probabilistic Time Series Imputation](https://arxiv.org/abs/2305.07247) | [code](papers/Conditional_Schrodinger_Bridge_Imputation)
-| 2023 | ICML | [Modeling Temporal Data as Continuous Functions with Stochastic Process Diffusion](https://arxiv.org/abs/2211.02590) | [code](papers/Stochastic_Process_Diffusion)
-| 2023 | ICLR Workshop | [On the Existence of a Trojaned Twin Model](https://arxiv.org/abs/2106.06469) | [code](papers/Existence_Trojaned_Twin_Model_UTTAttack)
-| 2023 | AISTATS | [Risk Bounds on Aleatoric Uncertainty Recovery](https://proceedings.mlr.press/v206/zhang23h/zhang23h.pdf) | [code](papers/Risk_Bounds_Aleatoric_Uncertainty)
-| 2022 | UAI | [Estimating Transfer Entropy Under Long-Ranged Dependencies](https://proceedings.mlr.press/v180/garg22a.html) | [code](papers/Direct_Estimate_Transfer_Entropy)
+> [!WARNING]
+> **Alpha Lab runs an LLM in a loop as _you_.** Anything your user account can do,
+> it can do — delete or overwrite files, execute arbitrary code, install
+> packages, make network calls. It is not malicious, but it is autonomous and
+> will make mistakes.
+>
+> Before running: use an **isolated workspace** (not your home directory) and
+> **back up anything that matters**.
 
 
-## Projects
+## What is Alpha Lab?
+Alpha Lab is a multi-agent system for autonomous machine-learning research. Give it a
+dataset and a task, and it takes over from there
+— exploring the data, building an evaluation framework, and running dozens of experiments 
+on your machines. 
 
-| Name | Description | Links |
-| ---- | ----------- | ----- |
-| qqWen | [Qwen-2.5 series models finetuned for the Q programming language](https://arxiv.org/abs/2508.06813) | [HuggingFace](https://huggingface.co/collections/morganstanley/qqwen-series-688e4266bc727e7a3143aacf),[code](projects/Fullstack_LLM_Finetuning_Q) |
-| AlphaLab | Autonomous multi-agent research system across optimization domains with frontier LLMs | [code](projects/alpha-lab) |
+## Quick start
+
+To help you hit the ground running, we've included a lightweight toy problem based on synthetic exchange-rate data. 
+Follow the steps shown below to setup and launch Alpha Lab, then watch as it does the rest!
+
+### Setup
+
+Fork and clone the repo, then create the virtual environment.
+
+```bash
+gh repo fork https://github.com/your-org/alpha-lab --clone
+cd alpha-lab
+
+export ON_PREM=1
+source scripts/setup-venv --venv-path .venv   # builds the venv at this path if absent
+python -m pytest tests                        # optional: confirm the install
+```
+
+`setup-venv` sets the `ALPHALAB_PYTHON` variable, which tells Alpha Lab which
+Python to use for running GPU experiments (Phase 3). It should point to a Python
+environment that has PyTorch, NumPy, Pandas, and other ML dependencies installed.
+All shell scripts and configs read from this variable automatically.
+
+Check core runtime prerequisites before starting a long run:
+
+```bash
+alpha-lab-doctor --workspace ./demo
+```
+
+The command checks Python, Pydantic compatibility, SQLite FTS5, Git, optional
+bwrap sandboxing, workspace writability, and MLflow configuration. Its MLflow
+check logs and reads back a temporary metric, then deletes the temporary run.
+It exits non-zero when a required check fails; pass `--json` for machine-readable
+output or `--skip-network` to skip the live MLflow check.
+
+First-time GitHub CLI setup: [gh quickstart](https://docs.github.com/en/github-cli/github-cli/quickstart).
+
+### Run the demo
+
+> [!IMPORTANT]
+> **MLflow tracking is ON by default** — a run exits at startup if the MLflow env vars are missing.
+> Either pass `--no-mlflow` or source mlflow.env and go. For details, see [Tracking](docs/11_tracking.md).
 
 
-## Contact
+```bash
+# Generate the synthetic demo dataset + config (no internet needed).
+./scripts/generate-exchange-test-data --output-dir ./demo
 
-The team can be reached at
-[msml-qa@morganstanley.com](mailto:msml-qa@morganstanley.com)
+# Configure MLflow and (optionally) name the experiment.
+source mlflow.env
+export MLFLOW_EXPERIMENT_NAME="alpha-lab-demo"  # defaults to the workspace name
+
+# Run.
+python run.py --config ./demo/config.json --workspace ./demo
+```
+
+> **Config resolution.** The run materializes a canonical config at
+> `{workspace}/.alpha_lab/config.json` and treats it as the single source of truth
+> (intake may edit it in place). `--config` **seeds** that canonical on the first run and
+> is therefore **required only when the workspace has no config yet**; on a resume you can
+> omit `--config` and the workspace's canonical is used. Passing `--config` when a canonical
+> already exists is a hard error **unless** it matches the existing config — pass
+> **`--overwrite-config`** to deliberately replace it.
+
+This will run all four phases autonomously:
+- **Phase 0**: Tailor the system to your data
+- **Phase 1**: Explore the dataset, write scripts, generate plots, build a report (~30-90 min)
+- **Phase 2**: Build an evaluation framework with tests (~20-60 min)
+- **Phase 3**: Run 10 GPU experiments with different ML models (~1-3 hours)
+
+> [!TIP]
+> Pass `--enable-intake` to begin a run with an interactive session for improved discovery and alignment.
+> See [Configuration](docs/02_configuration.md) for additional flags and settings.
+
+### Providers
+
+Alpha Lab supports `openai` (default), `anthropic`, `grok`, `bedrock`, and
+`local` providers. Set `provider` and the provider-specific `model` in your
+config; the rest of the agent loop stays provider-agnostic. See
+[Agents › Providers](docs/04_agents.md) for details.
+
+### To run local GLM 5.2 model
+
+Update the provider in the config to "local" and the model to the exact
+model id served by the endpoint — the `id` from its `GET /v1/models` (e.g.
+"glm-5.2"). The value is sent to the endpoint verbatim, and its "glm"/"kimi"
+substring selects the dialect, so it must contain one of those (e.g. "glm-5.2",
+"zai-org/GLM-5.1", "kimi-k2"). A bare "glm" is not a real model id and will 404.
+```
+export GLM_NATIVE_TOOLS=1
+export LOCAL_BASE_URL=http://gpu-host-1.example.com:8000
+```
+> bf16 setup: gpu-host-2.example.com:8000
+> nvfp4 setup: gpu-host-1.example.com:8000
+
+See `examples/local/` for a ready-made `config.json` (`"provider": "local"`).
+GLM-5.2 is text-only and routes image turns to Bedrock — set `BEDROCK_BASE_URL` if your
+gateway differs from the default.
+
+## Essentials
+
+How Alpha Lab works internally.
 
 
-## Licensing
+| | Topic | Covers |
+|---|-------|--------|
+| 1 | [Overview](docs/01_overview.md) | The phases and executors that drive a run. |
+| 2 | [Configuration](docs/02_configuration.md) | Task settings, agent settings, intake, and experiment-phase options. |
+| 3 | [Adapters](docs/03_adapters.md) | How the system is tailored to a domain — built-in domains, customization, and generation. |
+| 4 | [Agents](docs/04_agents.md) | The LLM-driven roles, their definitions, LLM providers, and sandboxing. |
+| 5 | [Tools](docs/05_tools.md) | The tools agents call, and how they're granted per agent. |
+| 6 | [Memory](docs/06_memory.md) | The persistent, portable store agents read from and write to. |
+| 7 | [Workspace](docs/07_workspace.md) | The run's on-disk layout — what each phase writes, and where. |
 
-All files in this repository, unless explicitly mentioned otherwise,
-are released under the Apache 2.0 license, the text of which can be
-found in the [LICENSE](LICENSE) file.
+## Add-ons
+
+Tooling and integrations that sit alongside a run rather than inside it.
+
+| | Topic | Covers |
+|---|-------|--------|
+| 8 | [Benchmarks](docs/08_benchmarks.md) | Creating, running, and reporting on benchmark suites. |
+| 9 | [Evaluation](docs/09_evaluation.md) | Scoring how well the system was tailored to a task. |
+| 10 | [Examples](docs/10_examples.md) | Bundled example configs to run as-is or adapt. |
+| 11 | [Tracking](docs/11_tracking.md) | MLflow, token-usage metrics, events, and the web dashboard. |

@@ -1,5 +1,0 @@
-lightning_logs
-__pycache__
-*.egg*
-.ipynb_checkpoints
-*.pdf

@@ -1,3 +1,0 @@
-model_specific_prompt_kwargs:
-  default:
-    prompt: "Provide a one-sentence caption for the provided image."

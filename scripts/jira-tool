@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""CLI for querying and creating AlphaLab Jira issues on PROJ."""
+
+import datetime
+
+import urllib3
+import click
+from tabulate import tabulate
+from jira import JIRA
+
+urllib3.disable_warnings()
+
+SERVER = 'https://jira.example.com/jira/'
+PROJECT = 'PROJ'
+COMPONENT = 'Alpha Lab'
+STORY_POINTS_FIELD = 'customfield_10513'
+EPIC_LINK_FIELD = 'customfield_10814'
+
+ISSUE_TYPES = ['Bug', 'Prod Bug', 'Obstacle', 'Epic', 'Story', 'Task', 'Sub-task']
+PRIORITIES = ['Blocker', 'Critical', 'Major', 'Medium', 'Minor', 'Backlog', 'Unknown', 'Unprioritized']
+STATUSES = ['Open', 'In Progress', 'Blocked', 'On Hold', 'Resolved']
+
+
+def _sanitize_jql_value(value: str) -> str:
+    """Escape double quotes in JQL filter values."""
+    sanitized = value.replace('\\', '\\\\').replace('"', '\\"')
+    return sanitized
+
+
+def _canonicalize(value: str, choices: list[str], field: str) -> str:
+    """Normalize a user-supplied value to its canonical casing in choices."""
+    lowered = value.lower()
+    for canonical in choices:
+        if canonical.lower() == lowered:
+            return canonical
+    raise click.BadParameter(f'Unknown {field}: {value}')
+
+
+def _validate_due_date(ctx, param, value: str | None) -> str | None:
+    """Validate that due-date is in YYYY-MM-DD format."""
+    if value is None:
+        return None
+    try:
+        datetime.date.fromisoformat(value)
+    except ValueError as e:
+        raise click.BadParameter(f'Due date must be YYYY-MM-DD: {value}') from e
+    return value
+
+
+def _parse_labels(raw: str) -> list[str]:
+    """Split comma-separated labels, strip, drop empties, and reject whitespace."""
+    labels = [label.strip() for label in raw.split(',')]
+    labels = [label for label in labels if label]
+    for label in labels:
+        if any(ch.isspace() for ch in label):
+            raise click.BadParameter(f'Jira labels cannot contain whitespace: {label!r}')
+    return labels
+
+
+def connect() -> JIRA:
+    """Connect to Jira via Kerberos.
+
+    Calls server_info() to warm the SiteMinder session so that
+    subsequent POST requests (e.g. create_issue) are authenticated.
+    """
+    jira = JIRA(
+        {'server': SERVER, 'verify': False},
+        kerberos=True,
+        kerberos_options={'mutual_authentication': 'OPTIONAL'},
+    )
+    jira.server_info()
+    return jira
+
+
+@click.group()
+def cli() -> None:
+    """AlphaLab Jira tool."""
+
+
+@cli.command('list')
+@click.option('--status', default=None, type=click.Choice(STATUSES, case_sensitive=False), help='Filter by status.')
+@click.option('--type', 'issuetype', default=None, type=click.Choice(ISSUE_TYPES, case_sensitive=False), help='Filter by issue type.')
+@click.option('--priority', default=None, type=click.Choice(PRIORITIES, case_sensitive=False), help='Filter by priority.')
+@click.option('--assignee', default=None, help='Filter by assignee username.')
+@click.option('--max', 'max_results', default=50, show_default=True, type=int, help='Maximum results to return.')
+def list_issues(status: str | None, issuetype: str | None, priority: str | None, assignee: str | None, max_results: int) -> None:
+    """List AlphaLab issues."""
+    clauses = [f'project = {PROJECT}', f'component = "{COMPONENT}"']
+    if status:
+        clauses.append(f'status = "{_canonicalize(status, STATUSES, "status")}"')
+    if issuetype:
+        clauses.append(f'issuetype = "{_canonicalize(issuetype, ISSUE_TYPES, "issue type")}"')
+    if priority:
+        clauses.append(f'priority = "{_canonicalize(priority, PRIORITIES, "priority")}"')
+    if assignee:
+        clauses.append(f'assignee = "{_sanitize_jql_value(assignee)}"')
+
+    jql = ' AND '.join(clauses) + ' ORDER BY updated DESC'
+    jira = connect()
+    issues = jira.search_issues(jql, maxResults=max_results)
+
+    if not issues:
+        click.echo('No issues found.')
+        return
+
+    rows = [
+        [i.key, i.fields.issuetype.name, i.fields.status.name, i.fields.priority.name if i.fields.priority else '', getattr(i.fields.assignee, 'name', '') or '', i.fields.summary[:80]]
+        for i in issues
+    ]
+    click.echo(tabulate(rows, headers=['Key', 'Type', 'Status', 'Priority', 'Assignee', 'Summary']))
+
+
+@cli.command('show')
+@click.argument('issue_key')
+def show_issue(issue_key: str) -> None:
+    """Show detail for a single issue."""
+    jira = connect()
+    issue = jira.issue(issue_key)
+    f = issue.fields
+
+    rows = [
+        ('Key', issue.key),
+        ('Type', f.issuetype.name),
+        ('Status', f.status.name),
+        ('Priority', f.priority.name if f.priority else ''),
+        ('Assignee', getattr(f.assignee, 'displayName', '') or ''),
+        ('Reporter', getattr(f.reporter, 'displayName', '') or ''),
+        ('Created', str(f.created)),
+        ('Updated', str(f.updated)),
+        ('Due Date', str(f.duedate) if f.duedate else ''),
+        ('Story Points', sp if (sp := getattr(f, STORY_POINTS_FIELD, None)) is not None else ''),
+        ('Components', ', '.join(c.name for c in f.components)),
+        ('Labels', ', '.join(f.labels)),
+        ('Epic Link', getattr(f, EPIC_LINK_FIELD, '') or ''),
+        ('Summary', f.summary),
+        ('Description', f.description or ''),
+        ('Link', f'{SERVER}browse/{issue.key}'),
+    ]
+    for label, value in rows:
+        click.echo(f'{label:>14s}: {value}')
+
+
+@cli.command('create')
+@click.option('--type', 'issuetype', required=True, type=click.Choice(ISSUE_TYPES, case_sensitive=False), help='Issue type.')
+@click.option('--summary', required=True, help='Issue summary.')
+@click.option('--description', default=None, help='Issue description.')
+@click.option('--priority', default=None, type=click.Choice(PRIORITIES, case_sensitive=False), help='Priority.')
+@click.option('--assignee', default=None, help='Assignee username. Empty by default.')
+@click.option('--story-points', default=None, type=float, help='Story points estimate.')
+@click.option('--due-date', default=None, callback=_validate_due_date, help='Due date (YYYY-MM-DD).')
+@click.option('--labels', default=None, help='Comma-separated labels.')
+def create_issue(
+    issuetype: str,
+    summary: str,
+    description: str | None,
+    priority: str | None,
+    assignee: str | None,
+    story_points: float | None,
+    due_date: str | None,
+    labels: str | None,
+) -> None:
+    """Create a new AlphaLab issue."""
+    fields: dict = {
+        'project': {'key': PROJECT},
+        'issuetype': {'name': _canonicalize(issuetype, ISSUE_TYPES, 'issue type')},
+        'summary': summary,
+        'components': [{'name': COMPONENT}],
+    }
+
+    if description:
+        fields['description'] = description
+    if priority:
+        fields['priority'] = {'name': _canonicalize(priority, PRIORITIES, 'priority')}
+    if assignee:
+        fields['assignee'] = {'name': assignee}
+    if story_points is not None:
+        fields[STORY_POINTS_FIELD] = story_points
+    if due_date:
+        fields['duedate'] = due_date
+    if labels:
+        fields['labels'] = _parse_labels(labels)
+
+    jira = connect()
+    issue = jira.create_issue(fields=fields)
+    click.echo(f'Created {issue.key}: {SERVER}browse/{issue.key}')
+
+
+if __name__ == '__main__':
+    cli()

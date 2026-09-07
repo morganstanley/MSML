@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+
+import json
+from collections import Counter
+
+import click
+
+from alpha_lab.providers.litellm_proxy import models_by_tags
+
+
+@click.command()
+@click.option(
+    "--baseurl",
+    default="http://local-llm.example.com",
+    show_default=True,
+    help="Base URL of the LiteLLM proxy.",
+)
+def main(baseurl: str) -> None:
+    model_names = models_by_tags(baseurl)
+    freq = Counter(model_names)
+    print(json.dumps(dict(freq), indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

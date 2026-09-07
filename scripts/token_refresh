@@ -1,0 +1,54 @@
+#!/bin/bash
+# Continuously refresh the auth token every 45 minutes.
+# Run this in a tmux/screen session as the proid:
+#
+#   suu -tr "<ticket>" <proid>
+#   ./token_refresh.sh &
+#   exit  # DON'T exit — keep this session alive
+#
+# Or in a separate tmux pane:
+#   tmux new-session -d -s token './token_refresh.sh'
+
+if [ -z "${VIRTUAL_ENV+x}" ]; then
+    echo "ERROR: This script must be run from an activated venv with alpha-lab-prefetch-token installed."
+    echo "Please activate your venv with ./scripts/setup-venv"
+    exit 1
+fi
+
+
+INTERVAL=2700  # 45 minutes (token lasts 60 min, refresh with 15 min buffer)
+
+# TOKEN_FILEPATH is honoured by both ends (the writer, alpha_lab.prefetch_token,
+# and the reader, alpha_lab.providers.utils.auth). Leave it unset to use the
+# shared default below; set it before calling this script to redirect the cache
+# to a path this account owns, and export the same value wherever the pipeline
+# runs so the reader looks in the same place.
+: "${TOKEN_FILEPATH:=/var/tmp/svcacct/.token_cache.json}"
+export TOKEN_FILEPATH
+
+echo "Token refresh daemon started (every ${INTERVAL}s / 45min)"
+echo "Token cache: ${TOKEN_FILEPATH}"
+echo "Press Ctrl+C to stop"
+
+# prefetch_token creates the directory itself; do it here too so a failure shows
+# up before the first fetch rather than after it.
+mkdir -p "$(dirname "${TOKEN_FILEPATH}")" || {
+    echo "ERROR: cannot create $(dirname "${TOKEN_FILEPATH}")"
+    echo "Set TOKEN_FILEPATH to a path this account owns and re-run."
+    exit 1
+}
+
+while true; do
+    echo ""
+    echo "$(date): Refreshing token..."
+    ${VIRTUAL_ENV}/bin/alpha-lab-prefetch-token
+
+    if [ $? -eq 0 ]; then
+        echo "$(date): Token refreshed. Next refresh in ${INTERVAL}s."
+    else
+        echo "$(date): WARNING — Token refresh failed! Retrying in 60s..."
+        sleep 60
+        continue
+    fi
+    sleep $INTERVAL
+done

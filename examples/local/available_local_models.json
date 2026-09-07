@@ -1,0 +1,9 @@
+{
+  "openai/glm-5.2": {
+    "glm_native_tools": true,
+    "vision_provider": "bedrock",
+    "vision_model": "claude-opus-4-7",
+    "max_tokens": 32000,
+    "temperature": 1.0
+  }
+}

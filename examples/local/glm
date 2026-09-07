@@ -1,0 +1,22 @@
+#!/usr/bin/bash
+
+SCRIPT_DIR=$(dirname $(realpath $0))
+WORKSPACE_DIR=/var/tmp/${USER}/alpha-lab/workspace
+mkdir -p ${WORKSPACE_DIR}
+
+# Setup MLFlow configs
+source "${SCRIPT_DIR}/../../mlflow.env"
+export MLFLOW_EXPERIMENT_NAME="alpha-lab-demo"
+
+# Setup glm configs
+export GLM_NATIVE_TOOLS=1
+export LOCAL_BASE_URL=http://local-llm.example.com
+
+# Setup venv
+export ON_PREM=1
+source "${SCRIPT_DIR}/../../scripts/setup-venv"
+
+# model configs
+export LOCAL_MODEL_CONFIG="${SCRIPT_DIR}/available_local_models.json"
+
+python run.py --config "${SCRIPT_DIR}/config.json" --workspace "${WORKSPACE_DIR}" --verbose

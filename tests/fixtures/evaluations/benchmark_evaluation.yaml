@@ -1,0 +1,63 @@
+# Benchmark evaluation config — no semantic similarity, criteria templated
+# from benchmark_manifest.json via Jinja2 {{ variable }} placeholders.
+# Use dot-access for nested values (e.g. {{ generator.n_features }}).
+
+# This is the file within the workspace that contains the variables used for substitution
+# Note that variables are referenced using their fully qualified location within `_template_source`
+_template_source: benchmark_manifest.json
+
+scm_classification:
+  judge:
+    provider: openai
+    model: gpt-4o-mini
+  files:
+    domain_knowledge:
+      criteria:
+        Dataset shape: >
+          States that the dataset has {{ generator.n_features }} features,
+          {{ generator.n_train }} training samples, and {{ generator.n_test }} test samples.
+        Class count: >
+          Identifies the task as {{ generator.n_classes }}-class classification.
+        Data format: >
+          Mentions that data is stored in NumPy .npz archives
+          with arrays named 'X' (feature matrix) and 'y' (labels).
+        Evaluation metric: >
+          Identifies classification accuracy as the evaluation metric.
+        Train/test split: >
+          Notes that the model should be fit on train_data.npz
+          and evaluated on test_data.npz (no leakage).
+        Target: >
+          Identifies that the goal is {{config.target}} and that nothing in the document contradicts the goal.
+      weights:
+        criteria: 1.0
+        similarity: 0.0
+    phase1:
+      criteria:
+        Exploration scope: >
+          Instructs the agent to explore the dataset shape, feature
+          distributions, and class balance.
+        Includes plan: >
+          Instructs the agent that the first action is the creation of a plan recorded in the file 'plan.md'
+        Script location: >
+          Instructs the agent to use the directory 'scripts/' as the location for Python code
+        Report location: >
+          Instructs the agent to use the directory 'data_report/' as the location for deliverables.
+          Document should also provide the names of expected deliverables ('schema.md', 'statistics.md', 'findings.md')
+        Learnings location: >
+          Instructs the agent to use 'learnings.md' as the repository for accumulated knowledge
+        Completion instructions: >
+          Instructs the agent to call 'report_to_user' tool when work is complete
+        Autonomy instructions: >
+          Instructs the agent that it is intended to be autonomous and should only attempt to communicate with the user in
+          exceptional circumstances.
+      weights:
+        criteria: 1.0
+        similarity: 0.0
+  mechanical_metrics:
+    input_tokens: { floor: 100000, ceiling: 200000 }
+    output_tokens: { floor: 2000, ceiling: 8000 }
+    tool_calls: { floor: 10, ceiling: 20 }
+    duration_seconds: { floor: 30, ceiling: 300 } 
+  weights:
+    files: 0.75
+    mechanical: 0.25

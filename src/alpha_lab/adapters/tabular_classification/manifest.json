@@ -1,0 +1,21 @@
+{
+  "domain_name": "tabular_classification",
+  "domain_description": "Tabular classification: predict a discrete target from tabular features",
+  "phase2_framework_description": "evaluation framework for tabular classification",
+  "phase2_review_file": "review.md",
+  "metric": {
+    "primary_metric": "accuracy",
+    "direction": "maximize",
+    "extract_key": "accuracy",
+    "display_name": "Accuracy",
+    "secondary_metrics": ["f1", "precision", "recall"]
+  },
+  "experiment": {
+    "required_files": ["strategy.py", "run_experiment.py"],
+    "entry_point": "run_experiment.py",
+    "results_dir": "results",
+    "results_file": "metrics.json",
+    "framework_dir": "harness",
+    "framework_files": ["strategy.py", "engine.py", "metrics.py", "baselines.py", "run_harness.py"]
+  }
+}

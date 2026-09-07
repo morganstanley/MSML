@@ -1,0 +1,218 @@
+_: &model_default
+  model: gpt-5.4
+  provider: openai
+  reasoning_effort: medium
+
+_: &model_smoketest
+  model: gpt-5.4
+  provider: openai
+  reasoning_effort: medium
+
+_: &pipeline_default
+  phase3:
+    gpu_ids: []
+    worker_count: 4
+    max_experiments: 32
+    report_interval: 4
+    strategist_interval: 180
+    cpu_time_limit_seconds: 300
+
+_: &pipeline_smoketest
+  phase3:
+    gpu_ids: []
+    worker_count: 4
+    max_experiments: 6
+    report_interval: 2
+    strategist_interval: 120
+    cpu_time_limit_seconds: 180
+
+
+gp_blackbox:
+  generator: alpha_lab.benchmarks.generators.gp_blackbox:GPBlackboxGenerator
+  smoke_test:
+    generator_kwargs:
+      seed: 42
+      count: 2
+      n_dims: 1
+      eval_limit: &bb_smoke_budget 3
+      noise_variance: 0.001
+      rel_lengthscale: 0.3
+    config_overrides:
+      <<: *model_smoketest
+      pipeline:
+        phase3:
+          gpu_ids: []
+          worker_count: 2
+          max_experiments: *bb_smoke_budget
+          report_interval: 1
+          strategist_interval: 120
+          cpu_time_limit_seconds: 180
+
+  easy:
+    generator_kwargs:
+      seed: 1000
+      count: 32
+      n_dims: 2
+      eval_limit: &bb_easy_budget 32
+      noise_variance: 0.001
+      rel_lengthscale: 0.3
+    config_overrides:
+      <<: *model_default
+      pipeline:
+        phase3:
+          gpu_ids: []
+          worker_count: 1
+          max_experiments: *bb_easy_budget
+          report_interval: 4
+          strategist_interval: 180
+          cpu_time_limit_seconds: 300
+
+  medium:
+    generator_kwargs:
+      seed: 2000
+      count: 32
+      n_dims: 3
+      eval_limit: &bb_medium_budget 48
+      noise_variance: 0.01
+      rel_lengthscale: 0.2
+    config_overrides:
+      <<: *model_default
+      pipeline:
+        phase3:
+          gpu_ids: []
+          worker_count: 1
+          max_experiments: *bb_medium_budget
+          report_interval: 4
+          strategist_interval: 180
+          cpu_time_limit_seconds: 300
+
+  hard:
+    generator_kwargs:
+      seed: 3000
+      count: 32
+      n_dims: 4
+      eval_limit: &bb_hard_budget 64
+      noise_variance: 1.0
+      rel_lengthscale: 0.1
+    config_overrides:
+      <<: *model_default
+      pipeline:
+        phase3:
+          gpu_ids: []
+          worker_count: 2
+          max_experiments: *bb_hard_budget
+          report_interval: 4
+          strategist_interval: 180
+          cpu_time_limit_seconds: 300
+
+gp_regression:
+  generator: alpha_lab.benchmarks.generators.gp_regression:GPRegressionGenerator
+  smoke_test:
+    generator_kwargs:
+      seed: 42
+      count: 2
+      n_dims: 1
+      n_train: 16
+      n_test: 256
+      noise_variance: 0.001
+      rel_lengthscale: 0.1
+    config_overrides:
+      <<: *model_smoketest
+      pipeline:
+        <<: *pipeline_smoketest
+
+  easy:
+    generator_kwargs:
+      seed: 1000
+      count: 32
+      n_dims: 1
+      n_train: 16
+      n_test: 256
+      noise_variance: 0.001
+      rel_lengthscale: 0.1
+    config_overrides:
+      <<: *model_default
+      pipeline:
+        <<: *pipeline_default
+
+  medium:
+    generator_kwargs:
+      seed: 2000
+      count: 32
+      n_dims: 4
+      n_train: 256
+      n_test: 1024
+      noise_variance: 0.1
+      rel_lengthscale: 0.1
+    config_overrides:
+      <<: *model_default
+      pipeline:
+        <<: *pipeline_default
+
+  hard:
+    generator_kwargs:
+      seed: 3000
+      count: 32
+      n_dims: 8
+      n_train: 1024
+      n_test: 16384
+      noise_variance: 0.25
+      rel_lengthscale: 0.05
+    config_overrides:
+      <<: *model_default
+      pipeline:
+        <<: *pipeline_default
+
+scm_classification:
+  generator: alpha_lab.benchmarks.generators.structural_causal:StructuralCausalGenerator
+  smoke_test:
+    generator_kwargs:
+      seed: 42
+      count: 4
+      min_features: 2
+      max_features: 4
+      max_classes: 2
+      max_seq_len: 256
+    config_overrides:
+      <<: *model_smoketest
+      pipeline:
+        <<: *pipeline_smoketest
+
+  easy:
+    generator_kwargs:
+      seed: 1000
+      count: 32
+      min_features: 2
+      max_features: 8
+      max_classes: 3
+      max_seq_len: 2048
+    config_overrides:
+      <<: *model_default
+      pipeline:
+        <<: *pipeline_default
+
+  medium:
+    generator_kwargs:
+      seed: 2000
+      count: 32
+      min_features: 4
+      max_features: 16
+      max_classes: 4
+      max_seq_len: 1024
+    config_overrides:
+      <<: *model_default
+      pipeline:
+        <<: *pipeline_default
+
+  hard:
+    generator_kwargs:
+      seed: 3000
+      count: 32
+      min_features: 8
+      max_features: 32
+      max_classes: 8
+      max_seq_len: 512
+    config_overrides:
+      <<: *model_default
+      pipeline:
+        <<: *pipeline_default
