@@ -1,0 +1,40 @@
+#!/bin/bash
+# Continuously refresh the auth token every 45 minutes.
+# Run this in a tmux/screen session as the proid:
+#
+#   suu -tr "<ticket>" <proid>
+#   ./token_refresh.sh &
+#   exit  # DON'T exit — keep this session alive
+#
+# Or in a separate tmux pane:
+#   tmux new-session -d -s token './token_refresh.sh'
+
+if [ -z "${VIRTUAL_ENV+x}" ]; then
+    echo "ERROR: This script must be run from an activated venv with alpha-lab-prefetch-token installed."
+    echo "Please activate your venv with ./scripts/setup-venv"
+    exit 1
+fi
+
+
+INTERVAL=2700  # 45 minutes (token lasts 60 min, refresh with 15 min buffer)
+
+echo "Token refresh daemon started (every ${INTERVAL}s / 45min)"
+echo "Press Ctrl+C to stop"
+
+mkdir -p /var/tmp/svcacct
+touch /var/tmp/svcacct/.token_cache.json
+
+while true; do
+    echo ""
+    echo "$(date): Refreshing token..."
+    ${VIRTUAL_ENV}/bin/alpha-lab-prefetch-token
+
+    if [ $? -eq 0 ]; then
+        echo "$(date): Token refreshed. Next refresh in ${INTERVAL}s."
+    else
+        echo "$(date): WARNING — Token refresh failed! Retrying in 60s..."
+        sleep 60
+        continue
+    fi
+    sleep $INTERVAL
+done

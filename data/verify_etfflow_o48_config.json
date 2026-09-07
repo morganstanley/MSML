@@ -1,0 +1,24 @@
+{
+  "data_path": "/v/global/user/y/yu/yuriyn/PycharmProjects5/mstech-alphalab/etf_rfq_research_dataset",
+  "description": "ETF RFQ dataset: clients ask the bank to buy/sell an ETF, the bank quotes, and wins the trade if its price is best. Everything is documented in the dataset directory (files, readme, sample notebook).",
+  "target": "Predict incoming netted, signed ETF flows over the next period (1 min to <=2 hours), at multiple aggregations (single ETF, broad/focused sectors, total). Can be cast as classification (buy/sell/none, or graded) or regression (signed flow). Downstream is a balanced long-short strategy exploiting the regularity; ignore transaction costs. The data is noisy: think hard about STRONG benchmarks and beat them. Only out-of-sample results matter -- work extra hard to verify NO information leaks from the future. Use cross-client information; client identity matters (who is price-sensitive, who reacts to which conditions, who trades together / influences whom). Condition on market conditions (returns, volume, volatility, liquidity; by-security and cross-sectional). ALL train/validation/test splits and moving windows MUST be split BY DATE.",
+  "domain": "time_series",
+  "provider": "bedrock",
+  "model": "claude-opus-4-8",
+  "reasoning_effort": "high",
+  "tool_output_max_chars": 1000000,
+  "tool_output_hard_cap_chars": 2000000,
+  "max_consecutive_tool_calls": 80,
+  "max_consecutive_nudges": 10,
+  "shell_timeout": 604800,
+  "context_summarization_threshold_tokens": 150000,
+  "learnings_summary_threshold_tokens": 20000,
+
+  "verify_workspace": "./workspace_etfflow_o48",
+  "verifier_provider": "bedrock",
+  "verifier_model": "claude-opus-4-8",
+  "verifier_reasoning_effort": "high",
+  "verifier_max_candidates": 4,
+  "verifier_max_rounds": 2,
+  "verifier_notebook_timeout": 1800
+}

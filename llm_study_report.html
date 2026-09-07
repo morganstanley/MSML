@@ -1,0 +1,2807 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>LLM Behavior Study — GPT-5.5 vs Claude Opus 4.7</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --fg: #1d2127;
+  --bg: #ffffff;
+  --muted: #5b6573;
+  --border: #d8dde3;
+  --accent: #0d6efd;
+  --code-bg: #f3f4f6;
+  --table-row-alt: #f8fafc;
+  --emphasis-bg: #fff7e0;
+  font-feature-settings: "tnum" 1;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e6e6e6;
+    --bg: #0e1217;
+    --muted: #8b94a3;
+    --border: #2a313b;
+    --accent: #6aa1ff;
+    --code-bg: #1a1f27;
+    --table-row-alt: #141821;
+    --emphasis-bg: #2a2410;
+  }
+}
+* { box-sizing: border-box; }
+html,body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+}
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 32px 40px 80px;
+}
+h1 {
+  font-size: 28px;
+  margin: 32px 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border);
+}
+h1:first-child { margin-top: 0; }
+h2 {
+  font-size: 22px;
+  margin: 28px 0 12px;
+  color: var(--fg);
+}
+h3 {
+  font-size: 17px;
+  margin: 22px 0 8px;
+  color: var(--accent);
+}
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 28px 0;
+}
+p { margin: 0 0 12px; }
+strong { font-weight: 600; }
+code {
+  font-family: "SF Mono", Monaco, "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+pre {
+  background: var(--code-bg);
+  padding: 14px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 0.85em;
+  line-height: 1.45;
+}
+pre code {
+  background: none;
+  padding: 0;
+}
+table {
+  border-collapse: collapse;
+  margin: 12px 0 18px;
+  font-size: 0.92em;
+  width: auto;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+th {
+  background: var(--code-bg);
+  font-weight: 600;
+}
+tr:nth-child(even) td {
+  background: var(--table-row-alt);
+}
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+ul, ol { padding-left: 24px; margin: 8px 0 14px; }
+li { margin: 3px 0; }
+blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 4px 14px;
+  margin: 12px 0;
+  color: var(--muted);
+}
+.tldr {
+  background: var(--emphasis-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 18px;
+  margin: 12px 0 24px;
+}
+.muted { color: var(--muted); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="page">
+<h1>Head-to-head LLM behavior study: GPT-5.5 vs Claude Opus 4.7</h1>
+<p><strong>Comparison setup (verified identical except for the LLM):</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">knob</th>
+<th style="text-align:left">g55</th>
+<th style="text-align:left">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">model</td>
+<td style="text-align:left">gpt-5.5</td>
+<td style="text-align:left">claude-opus-4-7</td>
+</tr>
+<tr>
+<td style="text-align:left">provider</td>
+<td style="text-align:left">openai</td>
+<td style="text-align:left">bedrock</td>
+</tr>
+<tr>
+<td style="text-align:left">reasoning_effort</td>
+<td style="text-align:left">xhigh</td>
+<td style="text-align:left">max</td>
+</tr>
+<tr>
+<td style="text-align:left">conductor_model</td>
+<td style="text-align:left">gpt-5.5</td>
+<td style="text-align:left">claude-opus-4-7</td>
+</tr>
+<tr>
+<td style="text-align:left">conductor_reasoning_effort</td>
+<td style="text-align:left">xhigh</td>
+<td style="text-align:left">max</td>
+</tr>
+<tr>
+<td style="text-align:left">domain</td>
+<td style="text-align:left">time_series</td>
+<td style="text-align:left">time_series</td>
+</tr>
+<tr>
+<td style="text-align:left">pipeline.phases</td>
+<td style="text-align:left">phase1, phase2, phase3</td>
+<td style="text-align:left">phase1, phase2, phase3</td>
+</tr>
+<tr>
+<td style="text-align:left">max_fix_iterations</td>
+<td style="text-align:left">13</td>
+<td style="text-align:left">13</td>
+</tr>
+<tr>
+<td style="text-align:left">max_experiments</td>
+<td style="text-align:left">360</td>
+<td style="text-align:left">360</td>
+</tr>
+<tr>
+<td style="text-align:left">worker_count</td>
+<td style="text-align:left">6</td>
+<td style="text-align:left">6</td>
+</tr>
+<tr>
+<td style="text-align:left">strategist_interval</td>
+<td style="text-align:left">30</td>
+<td style="text-align:left">30</td>
+</tr>
+<tr>
+<td style="text-align:left">report_interval</td>
+<td style="text-align:left">4</td>
+<td style="text-align:left">4</td>
+</tr>
+<tr>
+<td style="text-align:left">executor</td>
+<td style="text-align:left">local</td>
+<td style="text-align:left">local</td>
+</tr>
+<tr>
+<td style="text-align:left">gpu_ids</td>
+<td style="text-align:left">0..3</td>
+<td style="text-align:left">0..3</td>
+</tr>
+<tr>
+<td style="text-align:left">max_per_gpu</td>
+<td style="text-align:left">4</td>
+<td style="text-align:left">4</td>
+</tr>
+<tr>
+<td style="text-align:left">time_limit_seconds</td>
+<td style="text-align:left">41 600</td>
+<td style="text-align:left">41 600</td>
+</tr>
+<tr>
+<td style="text-align:left">cpu_max_parallel</td>
+<td style="text-align:left">40</td>
+<td style="text-align:left">40</td>
+</tr>
+<tr>
+<td style="text-align:left">cpu_time_limit_seconds</td>
+<td style="text-align:left">41 600</td>
+<td style="text-align:left">41 600</td>
+</tr>
+<tr>
+<td style="text-align:left">no_conductor</td>
+<td style="text-align:left">false</td>
+<td style="text-align:left">false</td>
+</tr>
+<tr>
+<td style="text-align:left">conductor_interval</td>
+<td style="text-align:left">1800</td>
+<td style="text-align:left">1800</td>
+</tr>
+</tbody></table>
+<p>Every other knob is bit-identical (config diff above), so all observed differences trace back to the LLM. Same ETF RFQ dataset, same adapter template, same Phase 0 customizer prompt, same worker prompts.</p>
+<p>All numbers below are extracted from the raw <code>*.jsonl</code> logs and the <code>experiments.db</code> of each workspace.</p>
+<hr/>
+<h2>TL;DR</h2><div class="tldr">
+<p>Claude Opus 4.7 (cond) is <strong>dramatically more efficient and disciplined</strong> than GPT-5.5 (g55) on this autonomous-research pipeline:</p>
+<ul>
+<li><strong>~2× faster wall-clock</strong> to the same number of analyzed experiments</li>
+</ul>
+<p>  (49.7h vs 109.1h, identical worker pool and budget).</p>
+<ul>
+<li><strong>~5× fewer LLM requests</strong> total (38.8k vs 168.9k).</li>
+<li><strong>~4× fewer tool calls per useful output</strong> (211 vs 891 per analyzed exp).</li>
+<li><strong>0.7% guard-rejected vs 30.5%</strong> — Claude almost never hits the kanban</li>
+</ul>
+<p>  guard; GPT-5.5 hits it on a third of all status attempts.</p>
+<ul>
+<li><strong>0 zombie rows vs 25</strong> — Claude finishes work cleanly; GPT-5.5 strands</li>
+</ul>
+<p>  experiments mid-kanban.</p>
+<ul>
+<li><strong>0 smoke-laundering attempts vs 773</strong> — Claude never tries to ship a</li>
+</ul>
+<p>  smoke payload as canonical; GPT-5.5 tries it constantly.</p>
+<ul>
+<li><strong>3 vs 28</strong> experiments where workers bypassed the dispatcher and launched</li>
+</ul>
+<p>  the canonical out-of-band with <code>nohup</code>.</p>
+<ul>
+<li>GPT-5.5 produced <strong>higher peak Sharpe</strong> (14.29 vs 6.14) but on this proxy</li>
+</ul>
+<p>  metric high values usually indicate cap/leakage residue rather than   alpha, and Claude&#x27;s tighter distribution is more believable.</p>
+<ul>
+<li><strong>cond fronts more work into Phase 1.</strong> It built the <code>backtest/</code></li>
+</ul>
+<p>  framework itself during exploration (88 framework-creating tool calls)   and skipped the dedicated Phase 2 builder. Phase 2 critic passed on   iteration 1. g55 took 6 builder→critic iterations to reach PASS.</p>
+</div><hr/>
+<h2>1. Inventory</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55 (GPT-5.5)</th>
+<th class="num" style="text-align:right">cond (Claude 4.7)</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">pipeline wall time</td>
+<td class="num" style="text-align:right">108.8 h</td>
+<td class="num" style="text-align:right">49.4 h</td>
+</tr>
+<tr>
+<td style="text-align:left">total experiments (DB)</td>
+<td class="num" style="text-align:right">377</td>
+<td class="num" style="text-align:right">360</td>
+</tr>
+<tr>
+<td style="text-align:left">ever dispatched (<code>started_at</code> set)</td>
+<td class="num" style="text-align:right">295</td>
+<td class="num" style="text-align:right">250</td>
+</tr>
+<tr>
+<td style="text-align:left">with <code>results_json</code> stored</td>
+<td class="num" style="text-align:right">361</td>
+<td class="num" style="text-align:right">253</td>
+</tr>
+<tr>
+<td style="text-align:left">with <code>error</code> field set</td>
+<td class="num" style="text-align:right">141</td>
+<td class="num" style="text-align:right">49</td>
+</tr>
+<tr>
+<td style="text-align:left">parked by Conductor</td>
+<td class="num" style="text-align:right">114</td>
+<td class="num" style="text-align:right">99</td>
+</tr>
+<tr>
+<td style="text-align:left">status=analyzed</td>
+<td class="num" style="text-align:right">264</td>
+<td class="num" style="text-align:right">254</td>
+</tr>
+<tr>
+<td style="text-align:left">status=implemented (still stuck)</td>
+<td class="num" style="text-align:right"><strong>64</strong></td>
+<td class="num" style="text-align:right"><strong>0</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">status=checked</td>
+<td class="num" style="text-align:right">14</td>
+<td class="num" style="text-align:right">5</td>
+</tr>
+<tr>
+<td style="text-align:left">status=running</td>
+<td class="num" style="text-align:right">32</td>
+<td class="num" style="text-align:right">4</td>
+</tr>
+<tr>
+<td style="text-align:left">status=to_implement (queue not yet implemented)</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">94</td>
+</tr>
+<tr>
+<td style="text-align:left">status=finished</td>
+<td class="num" style="text-align:right">2</td>
+<td class="num" style="text-align:right">3</td>
+</tr>
+<tr>
+<td style="text-align:left">status=done</td>
+<td class="num" style="text-align:right">1</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">milestones on disk</td>
+<td class="num" style="text-align:right">53</td>
+<td class="num" style="text-align:right">61</td>
+</tr>
+<tr>
+<td style="text-align:left">log .jsonl files</td>
+<td class="num" style="text-align:right">956</td>
+<td class="num" style="text-align:right">693</td>
+</tr>
+<tr>
+<td style="text-align:left">log volume</td>
+<td class="num" style="text-align:right"><strong>42.0 GB</strong></td>
+<td class="num" style="text-align:right">9.2 GB</td>
+</tr>
+</tbody></table>
+<p><strong>Read:</strong> Both runs reached similar absolute counts of analyzed experiments (264 vs 254). cond did it in less than half the wall time and with a tiny fraction of the log volume. g55 has 64 rows visibly stranded mid-kanban at <code>implemented</code>; cond has zero.</p>
+<hr/>
+<h2>2. LLM request volume and latency by role</h2>
+<p>Per-request latency is the time between an <code>api_request</code> event and its paired <code>api_response</code> event in the log.</p>
+<table>
+<thead><tr>
+<th style="text-align:left">role</th>
+<th class="num" style="text-align:right">g55_n</th>
+<th class="num" style="text-align:right">g55_mean(s)</th>
+<th class="num" style="text-align:right">g55_p50</th>
+<th class="num" style="text-align:right">g55_p90</th>
+<th class="num" style="text-align:right">g55_max</th>
+<th class="num" style="text-align:right">cond_n</th>
+<th class="num" style="text-align:right">cond_mean(s)</th>
+<th class="num" style="text-align:right">cond_p50</th>
+<th class="num" style="text-align:right">cond_p90</th>
+<th class="num" style="text-align:right">cond_max</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">conductor</td>
+<td class="num" style="text-align:right">6 000</td>
+<td class="num" style="text-align:right">12.0</td>
+<td class="num" style="text-align:right">8.8</td>
+<td class="num" style="text-align:right">23.1</td>
+<td class="num" style="text-align:right">642</td>
+<td class="num" style="text-align:right">2 744</td>
+<td class="num" style="text-align:right">36.6</td>
+<td class="num" style="text-align:right">18.3</td>
+<td class="num" style="text-align:right">85.6</td>
+<td class="num" style="text-align:right">520</td>
+</tr>
+<tr>
+<td style="text-align:left">phase0_customize</td>
+<td class="num" style="text-align:right">49</td>
+<td class="num" style="text-align:right">11.3</td>
+<td class="num" style="text-align:right">5.5</td>
+<td class="num" style="text-align:right">24.4</td>
+<td class="num" style="text-align:right">50</td>
+<td class="num" style="text-align:right">28</td>
+<td class="num" style="text-align:right">12.7</td>
+<td class="num" style="text-align:right">3.8</td>
+<td class="num" style="text-align:right">29.8</td>
+<td class="num" style="text-align:right">74</td>
+</tr>
+<tr>
+<td style="text-align:left">phase1_explorer</td>
+<td class="num" style="text-align:right">124</td>
+<td class="num" style="text-align:right">25.4</td>
+<td class="num" style="text-align:right">15.5</td>
+<td class="num" style="text-align:right">59.2</td>
+<td class="num" style="text-align:right">179</td>
+<td class="num" style="text-align:right">718</td>
+<td class="num" style="text-align:right">14.8</td>
+<td class="num" style="text-align:right">8.4</td>
+<td class="num" style="text-align:right">35.3</td>
+<td class="num" style="text-align:right">175</td>
+</tr>
+<tr>
+<td style="text-align:left">phase2_builder ¹</td>
+<td class="num" style="text-align:right">158</td>
+<td class="num" style="text-align:right">8.6</td>
+<td class="num" style="text-align:right">5.7</td>
+<td class="num" style="text-align:right">15.2</td>
+<td class="num" style="text-align:right">64</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">—</td>
+<td class="num" style="text-align:right">—</td>
+<td class="num" style="text-align:right">—</td>
+<td class="num" style="text-align:right">—</td>
+</tr>
+<tr>
+<td style="text-align:left">phase2_critic</td>
+<td class="num" style="text-align:right">281</td>
+<td class="num" style="text-align:right">7.4</td>
+<td class="num" style="text-align:right">4.7</td>
+<td class="num" style="text-align:right">11.8</td>
+<td class="num" style="text-align:right">54</td>
+<td class="num" style="text-align:right">18</td>
+<td class="num" style="text-align:right">31.2</td>
+<td class="num" style="text-align:right">7.4</td>
+<td class="num" style="text-align:right">74.6</td>
+<td class="num" style="text-align:right">196</td>
+</tr>
+<tr>
+<td style="text-align:left">phase2_tester</td>
+<td class="num" style="text-align:right">27</td>
+<td class="num" style="text-align:right">9.9</td>
+<td class="num" style="text-align:right">3.6</td>
+<td class="num" style="text-align:right">11.3</td>
+<td class="num" style="text-align:right">62</td>
+<td class="num" style="text-align:right">17</td>
+<td class="num" style="text-align:right">11.0</td>
+<td class="num" style="text-align:right">9.4</td>
+<td class="num" style="text-align:right">20.8</td>
+<td class="num" style="text-align:right">30</td>
+</tr>
+</tbody></table>
+<p>¹ cond shows zero phase2_builder events because the Phase 1 explorer on cond <strong>built the backtest framework itself during exploration</strong> — <code>conversation.jsonl</code> on cond contains 88 tool calls creating files under <code>backtest/</code> (engine.py, features.py, panel_utils.py, strategy.py, metrics.py). When Phase 2 started, <code>detect_phase2_progress</code> saw the framework already on disk and began at the critic step (<code>pipeline.jsonl: &quot;Starting Phase 2 from critic&quot;</code>). g55&#x27;s Phase 1 made 0 such tool calls and left framework construction to the dedicated Phase 2 builder, which ran 6 builder→critic iterations before getting a PASS.</p>
+<table>
+<thead><tr>
+<th style="text-align:left">reporter</th>
+<th style="text-align:left">1 177</th>
+<th style="text-align:left">15.0</th>
+<th style="text-align:left">8.6</th>
+<th style="text-align:left">26.1</th>
+<th style="text-align:left">315</th>
+<th style="text-align:left">1 065</th>
+<th style="text-align:left">18.4</th>
+<th style="text-align:left">8.7</th>
+<th style="text-align:left">32.8</th>
+<th style="text-align:left">298</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">supervisor</td>
+<td style="text-align:left">168</td>
+<td style="text-align:left">6.6</td>
+<td style="text-align:left">3.7</td>
+<td style="text-align:left">13.6</td>
+<td style="text-align:left">73</td>
+<td style="text-align:left">35</td>
+<td style="text-align:left">6.0</td>
+<td style="text-align:left">4.6</td>
+<td style="text-align:left">13.7</td>
+<td style="text-align:left">15</td>
+</tr>
+<tr>
+<td style="text-align:left">worker_analyze</td>
+<td style="text-align:left">10 638</td>
+<td style="text-align:left">10.3</td>
+<td style="text-align:left">6.2</td>
+<td style="text-align:left">18.0</td>
+<td style="text-align:left">311</td>
+<td style="text-align:left">4 762</td>
+<td style="text-align:left">30.5</td>
+<td style="text-align:left">16.6</td>
+<td style="text-align:left">70.2</td>
+<td style="text-align:left">438</td>
+</tr>
+<tr>
+<td style="text-align:left">worker_fix</td>
+<td style="text-align:left">1 336</td>
+<td style="text-align:left">8.8</td>
+<td style="text-align:left">4.9</td>
+<td style="text-align:left">14.7</td>
+<td style="text-align:left">288</td>
+<td style="text-align:left">1 520</td>
+<td style="text-align:left">15.9</td>
+<td style="text-align:left">9.2</td>
+<td style="text-align:left">35.3</td>
+<td style="text-align:left">485</td>
+</tr>
+<tr>
+<td style="text-align:left">worker_implement</td>
+<td style="text-align:left"><strong>133 143</strong></td>
+<td style="text-align:left">8.6</td>
+<td style="text-align:left">4.5</td>
+<td style="text-align:left">11.9</td>
+<td style="text-align:left">2 714</td>
+<td style="text-align:left"><strong>24 658</strong></td>
+<td style="text-align:left">19.1</td>
+<td style="text-align:left">9.2</td>
+<td style="text-align:left">30.5</td>
+<td style="text-align:left">953</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>TOTAL</strong></td>
+<td style="text-align:left"><strong>168 931</strong></td>
+<td style="text-align:left">9.5</td>
+<td style="text-align:left">5.0</td>
+<td style="text-align:left">14.1</td>
+<td style="text-align:left">2 714</td>
+<td style="text-align:left"><strong>38 811</strong></td>
+<td style="text-align:left">23.0</td>
+<td style="text-align:left">10.4</td>
+<td style="text-align:left">47.3</td>
+<td style="text-align:left">953</td>
+</tr>
+</tbody></table>
+<p><strong>Total LLM wall-time consumed (sum of latencies):</strong></p>
+<ul>
+<li>g55:  <strong>444.8 h</strong> for 168 931 requests</li>
+<li>cond: <strong>248.1 h</strong> for 38 811 requests</li>
+</ul>
+<p><strong>Top time sinks:</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">bucket</th>
+<th class="num" style="text-align:right">g55 LLM time</th>
+<th class="num" style="text-align:right">cond LLM time</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">worker_implement</td>
+<td class="num" style="text-align:right">319.3 h</td>
+<td class="num" style="text-align:right">131.1 h</td>
+</tr>
+<tr>
+<td style="text-align:left">strategist</td>
+<td class="num" style="text-align:right">64.4 h</td>
+<td class="num" style="text-align:right">33.2 h</td>
+</tr>
+<tr>
+<td style="text-align:left">worker_analyze</td>
+<td class="num" style="text-align:right">30.6 h</td>
+<td class="num" style="text-align:right">40.4 h</td>
+</tr>
+<tr>
+<td style="text-align:left">conductor</td>
+<td class="num" style="text-align:right">20.0 h</td>
+<td class="num" style="text-align:right">27.9 h</td>
+</tr>
+<tr>
+<td style="text-align:left">reporter</td>
+<td class="num" style="text-align:right">4.9 h</td>
+<td class="num" style="text-align:right">5.4 h</td>
+</tr>
+<tr>
+<td style="text-align:left">worker_fix</td>
+<td class="num" style="text-align:right">3.3 h</td>
+<td class="num" style="text-align:right">6.7 h</td>
+</tr>
+</tbody></table>
+<p><strong>Read:</strong> Per-request, cond is <strong>~2× slower</strong> than g55 (median 10.4s vs 5.0s, max 953s vs 2714s). But cond makes <strong>4.4× fewer requests overall</strong> and <strong>5.4× fewer implement requests</strong> — the dominant cost — so cond still uses <strong>half</strong> the total LLM time. The implement role accounts for 72% of g55&#x27;s LLM time vs 53% of cond&#x27;s. cond spreads its work more evenly across roles.</p>
+<p><strong>Phase 1 → Phase 2 trade-off (corrected after first-pass error):</strong> cond intentionally fronts a lot of work into Phase 1. Phase 1 explorer api_requests: cond <strong>732</strong> vs g55 <strong>124</strong> (6×). Phase 1 LLM wall time: cond <strong>2.9 h</strong> vs g55 <strong>52 m</strong> (3.4×). In exchange cond skips the Phase 2 builder entirely and gets a critic PASS on iteration #1 (18 critic requests). g55 spreads the same work across Phase 1 + 6 builder iterations + 6 critic iterations (158 + 281 = 439 requests, plus the 26 total phase2 iteration events visible in pipeline.jsonl). The two LLMs reach the same end-state (framework built, tests pass) via different process shapes. cond&#x27;s shape uses more setup tokens but eliminates the builder→critic ping-pong.</p>
+<p><strong>ASCII chart — total LLM time per workspace (each <code>#</code> ≈ 10 h):</strong></p>
+<pre><code>g55  worker_implement  ################################  (319.3h)
+g55  strategist        ######                            ( 64.4h)
+g55  worker_analyze    ###                               ( 30.6h)
+g55  conductor         ##                                ( 20.0h)
+g55  other             ##                                ( 10.5h)
+                                                          ──────
+                                                          444.8h
+cond worker_implement  #############                     (131.1h)
+cond conductor         ###                               ( 27.9h)
+cond worker_analyze    ####                              ( 40.4h)
+cond strategist        ###                               ( 33.2h)
+cond other             #                                 ( 15.5h)
+                                                          ──────
+                                                          248.1h</code></pre>
+<hr/>
+<h2>3. Tool-call distribution (top 14 tools)</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">tool</th>
+<th class="num" style="text-align:right">g55 calls</th>
+<th class="num" style="text-align:right">g55 %</th>
+<th class="num" style="text-align:right">cond calls</th>
+<th class="num" style="text-align:right">cond %</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">read_file</td>
+<td class="num" style="text-align:right"><strong>133 562</strong></td>
+<td class="num" style="text-align:right">56.8%</td>
+<td class="num" style="text-align:right">10 176</td>
+<td class="num" style="text-align:right">19.0%</td>
+</tr>
+<tr>
+<td style="text-align:left">shell_exec</td>
+<td class="num" style="text-align:right">44 721</td>
+<td class="num" style="text-align:right">19.0%</td>
+<td class="num" style="text-align:right"><strong>26 785</strong></td>
+<td class="num" style="text-align:right"><strong>49.9%</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">grep_file</td>
+<td class="num" style="text-align:right">14 535</td>
+<td class="num" style="text-align:right">6.2%</td>
+<td class="num" style="text-align:right">3 793</td>
+<td class="num" style="text-align:right">7.1%</td>
+</tr>
+<tr>
+<td style="text-align:left">memory_search</td>
+<td class="num" style="text-align:right">7 405</td>
+<td class="num" style="text-align:right">3.1%</td>
+<td class="num" style="text-align:right">3 482</td>
+<td class="num" style="text-align:right">6.5%</td>
+</tr>
+<tr>
+<td style="text-align:left">memory_read</td>
+<td class="num" style="text-align:right">7 426</td>
+<td class="num" style="text-align:right">3.2%</td>
+<td class="num" style="text-align:right">645</td>
+<td class="num" style="text-align:right">1.2%</td>
+</tr>
+<tr>
+<td style="text-align:left">report_to_user</td>
+<td class="num" style="text-align:right">6 484</td>
+<td class="num" style="text-align:right">2.8%</td>
+<td class="num" style="text-align:right">1 351</td>
+<td class="num" style="text-align:right">2.5%</td>
+</tr>
+<tr>
+<td style="text-align:left">memory_store</td>
+<td class="num" style="text-align:right">4 329</td>
+<td class="num" style="text-align:right">1.8%</td>
+<td class="num" style="text-align:right">1 198</td>
+<td class="num" style="text-align:right">2.2%</td>
+</tr>
+<tr>
+<td style="text-align:left">update_experiment</td>
+<td class="num" style="text-align:right">3 298</td>
+<td class="num" style="text-align:right">1.4%</td>
+<td class="num" style="text-align:right">896</td>
+<td class="num" style="text-align:right">1.7%</td>
+</tr>
+<tr>
+<td style="text-align:left">read_experiment</td>
+<td class="num" style="text-align:right">3 513</td>
+<td class="num" style="text-align:right">1.5%</td>
+<td class="num" style="text-align:right">565</td>
+<td class="num" style="text-align:right">1.1%</td>
+</tr>
+<tr>
+<td style="text-align:left">read_board</td>
+<td class="num" style="text-align:right">2 652</td>
+<td class="num" style="text-align:right">1.1%</td>
+<td class="num" style="text-align:right">1 024</td>
+<td class="num" style="text-align:right">1.9%</td>
+</tr>
+<tr>
+<td style="text-align:left">note_to_conductor</td>
+<td class="num" style="text-align:right">1 696</td>
+<td class="num" style="text-align:right">0.7%</td>
+<td class="num" style="text-align:right">214</td>
+<td class="num" style="text-align:right">0.4%</td>
+</tr>
+<tr>
+<td style="text-align:left">update_playbook</td>
+<td class="num" style="text-align:right">1 358</td>
+<td class="num" style="text-align:right">0.6%</td>
+<td class="num" style="text-align:right">86</td>
+<td class="num" style="text-align:right">0.2%</td>
+</tr>
+<tr>
+<td style="text-align:left">propose_experiment</td>
+<td class="num" style="text-align:right">380</td>
+<td class="num" style="text-align:right">0.2%</td>
+<td class="num" style="text-align:right">364</td>
+<td class="num" style="text-align:right">0.7%</td>
+</tr>
+<tr>
+<td style="text-align:left">view_image</td>
+<td class="num" style="text-align:right">542</td>
+<td class="num" style="text-align:right">0.2%</td>
+<td class="num" style="text-align:right">1 404</td>
+<td class="num" style="text-align:right">2.6%</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>TOTAL</strong></td>
+<td class="num" style="text-align:right"><strong>235 220</strong></td>
+<td class="num" style="text-align:right"></td>
+<td class="num" style="text-align:right"><strong>53 694</strong></td>
+<td class="num" style="text-align:right"></td>
+</tr>
+</tbody></table>
+<p><strong>Read:</strong> Very different orientation.</p>
+<ul>
+<li><strong>g55 reads files</strong> (57% of calls). It re-reads source/docs/notes repeatedly.</li>
+<li><strong>cond shells out</strong> (50% of calls). It composes multi-step bash pipelines.</li>
+<li><strong>g55 uses memory 2× more often</strong> (10 851 reads/searches/stores vs 5 325)</li>
+</ul>
+<p>  and inspects view_image 2.6× less often.</p>
+<ul>
+<li>cond&#x27;s tool budget is <strong>4.4× smaller</strong> in absolute terms — fewer, denser calls.</li>
+</ul>
+<h3>Why is <code>read_file</code> 13× higher on g55? Deep dive</h3>
+<p>The 56.8% vs 19.0% gap demanded a hypothesis-by-hypothesis test. Source data: <code>api_response.usage.input_tokens</code> / <code>output_tokens</code> from every paired response event, plus <code>tool_result.output</code> sizes from every paired result event, across all 1 649 log files. Six hypotheses, each tested:</p>
+<p><strong>H1 (g55 sees less context per turn so it re-fetches) — REJECTED.</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">metric (per response)</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">mean input_tokens, <strong>all roles</strong></td>
+<td class="num" style="text-align:right"><strong>53 810</strong></td>
+<td class="num" style="text-align:right"><strong>75 025</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">mean input_tokens, worker_implement</td>
+<td class="num" style="text-align:right">54 460</td>
+<td class="num" style="text-align:right">98 090</td>
+</tr>
+<tr>
+<td style="text-align:left">median input_tokens, worker_implement</td>
+<td class="num" style="text-align:right">49 254</td>
+<td class="num" style="text-align:right">92 718</td>
+</tr>
+<tr>
+<td style="text-align:left">p90 input_tokens, worker_implement</td>
+<td class="num" style="text-align:right">100 633</td>
+<td class="num" style="text-align:right">179 691</td>
+</tr>
+</tbody></table>
+<p>cond actually receives <strong>~2× more input tokens per worker_implement turn</strong>. Whatever drives g55&#x27;s extra reads, it isn&#x27;t that g55 has less context per turn — g55 has <em>less</em>, not <em>more</em>, yet reads more.</p>
+<p><strong>H2 (g55 gets smaller files back, so it re-reads) — REJECTED.</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">read_file output bytes — mean</td>
+<td class="num" style="text-align:right">11.3 k</td>
+<td class="num" style="text-align:right">11.4 k</td>
+</tr>
+<tr>
+<td style="text-align:left">read_file output bytes — median</td>
+<td class="num" style="text-align:right">6 737</td>
+<td class="num" style="text-align:right">8 956</td>
+</tr>
+<tr>
+<td style="text-align:left">read_file output bytes — p90</td>
+<td class="num" style="text-align:right">17 797</td>
+<td class="num" style="text-align:right">24 748</td>
+</tr>
+<tr>
+<td style="text-align:left">read_file output bytes — p99</td>
+<td class="num" style="text-align:right">45 653</td>
+<td class="num" style="text-align:right">59 338</td>
+</tr>
+</tbody></table>
+<p>cond actually gets <em>slightly larger</em> chunks back per call. Per-call bandwidth is essentially identical (and if anything tilts toward cond getting more content per call).</p>
+<p><strong>H3 (g55 re-reads content it has already read; cond&#x27;s repeats are paginating into new pages) — CONFIRMED via line-range overlap (not time gap).</strong></p>
+<p>The first version of this test used time-gap between same-path reads, which conflates &quot;the LLM was just busy between two paginations&quot; with &quot;stale-context refetch&quot;. A direct test compares the requested <em>line ranges</em> (<code>offset</code>, <code>limit</code> — defaults <code>offset=0, limit=500</code> per <code>src/alpha_lab/tools.py:1435</code>) and asks: is the new range already covered by earlier reads of the same path in the same agent log?</p>
+<p><strong>Per-call classification (each <code>read_file</code> invocation labeled by how much of its requested line range was already in earlier reads):</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">category</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">g55_%</th>
+<th class="num" style="text-align:right">cond</th>
+<th class="num" style="text-align:right">cond_%</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">first_read (first time this path appears in this log)</td>
+<td class="num" style="text-align:right">20 558</td>
+<td class="num" style="text-align:right">15.4%</td>
+<td class="num" style="text-align:right">4 544</td>
+<td class="num" style="text-align:right"><strong>44.7%</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">fully_new (disjoint new page — paginating)</td>
+<td class="num" style="text-align:right">2 375</td>
+<td class="num" style="text-align:right">1.8%</td>
+<td class="num" style="text-align:right">1 811</td>
+<td class="num" style="text-align:right"><strong>17.8%</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">partial_new (some new, some already-seen)</td>
+<td class="num" style="text-align:right">2 838</td>
+<td class="num" style="text-align:right">2.1%</td>
+<td class="num" style="text-align:right">246</td>
+<td class="num" style="text-align:right">2.4%</td>
+</tr>
+<tr>
+<td style="text-align:left">mostly_redundant (&lt;50% lines are new)</td>
+<td class="num" style="text-align:right">4 038</td>
+<td class="num" style="text-align:right">3.0%</td>
+<td class="num" style="text-align:right">180</td>
+<td class="num" style="text-align:right">1.8%</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>fully_redundant (100% of lines already read)</strong></td>
+<td class="num" style="text-align:right"><strong>103 753</strong></td>
+<td class="num" style="text-align:right"><strong>77.7%</strong></td>
+<td class="num" style="text-align:right">3 394</td>
+<td class="num" style="text-align:right">33.4%</td>
+</tr>
+<tr>
+<td style="text-align:left">total</td>
+<td class="num" style="text-align:right">133 562</td>
+<td class="num" style="text-align:right"></td>
+<td class="num" style="text-align:right">10 175</td>
+<td class="num" style="text-align:right"></td>
+</tr>
+</tbody></table>
+<p><strong>Per-line accounting (lines of file content actually requested):</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left"></th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">total lines requested</td>
+<td class="num" style="text-align:right">31 337 227</td>
+<td class="num" style="text-align:right">3 038 483</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>new lines added to context</strong></td>
+<td class="num" style="text-align:right">8 025 066 (<strong>25.6%</strong>)</td>
+<td class="num" style="text-align:right">2 304 694 (<strong>75.9%</strong>)</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>redundant lines re-read</strong></td>
+<td class="num" style="text-align:right"><strong>23 312 161 (74.4%)</strong></td>
+<td class="num" style="text-align:right">733 789 (24.1%)</td>
+</tr>
+</tbody></table>
+<p><strong>Repeat factor per (log, path):</strong> total lines requested for that path in that log ÷ unique lines actually covered. 1.0 = each line requested exactly once.</p>
+<table>
+<thead><tr>
+<th style="text-align:left"></th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">mean repeat factor</td>
+<td class="num" style="text-align:right"><strong>2.59</strong></td>
+<td class="num" style="text-align:right">1.19</td>
+</tr>
+<tr>
+<td style="text-align:left">median</td>
+<td class="num" style="text-align:right">1.00</td>
+<td class="num" style="text-align:right">1.00</td>
+</tr>
+<tr>
+<td style="text-align:left">p90</td>
+<td class="num" style="text-align:right">3.80</td>
+<td class="num" style="text-align:right">1.60</td>
+</tr>
+<tr>
+<td style="text-align:left">% of (log, path) pairs with factor &gt; 1</td>
+<td class="num" style="text-align:right">32.8%</td>
+<td class="num" style="text-align:right">25.8%</td>
+</tr>
+</tbody></table>
+<p><strong>MAJOR CORRECTION (added after deeper analysis):</strong> the &quot;fully redundant&quot; line-range test below was applied per-log-file, but each log file contains many independent agent sessions concatenated together — each fresh agent reassignment starts with an empty context. A read in session #2 of a path that session #1 read is not redundant from the model&#x27;s perspective; the model has no memory of the earlier session. Splitting by <code>Agent starting</code> markers and classifying with both <strong>modification awareness</strong> and <strong>compaction awareness</strong> gives:</p>
+<table>
+<thead><tr>
+<th style="text-align:left">category (per agent session)</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">g55 %</th>
+<th class="num" style="text-align:right">cond</th>
+<th class="num" style="text-align:right">cond %</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">first_read (per-session)</td>
+<td class="num" style="text-align:right">80 770</td>
+<td class="num" style="text-align:right"><strong>60.47%</strong></td>
+<td class="num" style="text-align:right">5 197</td>
+<td class="num" style="text-align:right">51.07%</td>
+</tr>
+<tr>
+<td style="text-align:left">new_range (paginating to new content)</td>
+<td class="num" style="text-align:right">21 548</td>
+<td class="num" style="text-align:right">16.13%</td>
+<td class="num" style="text-align:right">2 654</td>
+<td class="num" style="text-align:right">26.08%</td>
+</tr>
+<tr>
+<td style="text-align:left">modified_since (verify-after-write — rational)</td>
+<td class="num" style="text-align:right">696</td>
+<td class="num" style="text-align:right">0.52%</td>
+<td class="num" style="text-align:right">69</td>
+<td class="num" style="text-align:right">0.68%</td>
+</tr>
+<tr>
+<td style="text-align:left">prior compacted + we want middle (rational bypass)</td>
+<td class="num" style="text-align:right">30 160</td>
+<td class="num" style="text-align:right">22.58%</td>
+<td class="num" style="text-align:right">2 193</td>
+<td class="num" style="text-align:right">21.55%</td>
+</tr>
+<tr>
+<td style="text-align:left">prior compacted + we want head/tail (wasted)</td>
+<td class="num" style="text-align:right">193</td>
+<td class="num" style="text-align:right"><strong>0.14%</strong></td>
+<td class="num" style="text-align:right">21</td>
+<td class="num" style="text-align:right"><strong>0.21%</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">prior NOT compacted + same range (truly wasted)</td>
+<td class="num" style="text-align:right">195</td>
+<td class="num" style="text-align:right"><strong>0.15%</strong></td>
+<td class="num" style="text-align:right">42</td>
+<td class="num" style="text-align:right"><strong>0.41%</strong></td>
+</tr>
+</tbody></table>
+<p><strong>Per agent session, both LLMs are ~0.3% truly wasted on reads.</strong></p>
+<p><strong>The 13× read volume decomposes as 12× sessions × 1.16× reads per session (NOT 4.3× × 3.0× as I claimed initially).</strong></p>
+<p>The earlier &quot;20.4 vs 6.8 reads per session&quot; was a Simpson&#x27;s-paradox artifact: cond has many cheap strategist + conductor sessions in the denominator pulling its mean down. Filtering to <code>worker_implement</code> only:</p>
+<table>
+<thead><tr>
+<th style="text-align:left">metric (worker_implement only)</th>
+<th class="num" style="text-align:right">g55 mean</th>
+<th class="num" style="text-align:right">cond mean</th>
+<th class="num" style="text-align:right">ratio</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">reads / session</td>
+<td class="num" style="text-align:right">22.9</td>
+<td class="num" style="text-align:right">19.7</td>
+<td class="num" style="text-align:right"><strong>1.16×</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">turns (api_requests) / session</td>
+<td class="num" style="text-align:right">31.6</td>
+<td class="num" style="text-align:right"><strong>70.3</strong></td>
+<td class="num" style="text-align:right"><strong>0.45×</strong> (cond more)</td>
+</tr>
+<tr>
+<td style="text-align:left">tool_calls / session</td>
+<td class="num" style="text-align:right">38.3</td>
+<td class="num" style="text-align:right"><strong>82.2</strong></td>
+<td class="num" style="text-align:right">0.47×</td>
+</tr>
+<tr>
+<td style="text-align:left">shell_exec / session</td>
+<td class="num" style="text-align:right">8.8</td>
+<td class="num" style="text-align:right"><strong>49.6</strong></td>
+<td class="num" style="text-align:right">0.18×</td>
+</tr>
+<tr>
+<td style="text-align:left">duration / session (s)</td>
+<td class="num" style="text-align:right">380</td>
+<td class="num" style="text-align:right"><strong>1 819</strong></td>
+<td class="num" style="text-align:right">0.21×</td>
+</tr>
+<tr>
+<td style="text-align:left">input tokens / session</td>
+<td class="num" style="text-align:right">1.72M</td>
+<td class="num" style="text-align:right"><strong>6.87M</strong></td>
+<td class="num" style="text-align:right">0.25×</td>
+</tr>
+<tr>
+<td style="text-align:left">output tokens / session</td>
+<td class="num" style="text-align:right">9 795</td>
+<td class="num" style="text-align:right"><strong>62 545</strong></td>
+<td class="num" style="text-align:right">0.16×</td>
+</tr>
+<tr>
+<td style="text-align:left">ended with report_to_user</td>
+<td class="num" style="text-align:right"><strong>99.0%</strong></td>
+<td class="num" style="text-align:right">74.7%</td>
+<td class="num" style="text-align:right">—</td>
+</tr>
+</tbody></table>
+<p>Per implement session g55 does <strong>fewer turns, fewer tool calls, fewer shells, less wall time, and emits 6× less output</strong>. Reads are roughly equal (g55 only 1.16× more). The 13× total read volume is almost entirely about how many fresh implement workers got spawned, not about behavior within a session.</p>
+<p><strong>Session-count breakdown — origin of the 4.3× extra agent sessions:</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">role</th>
+<th class="num" style="text-align:right">g55 sessions</th>
+<th class="num" style="text-align:right">cond sessions</th>
+<th class="num" style="text-align:right">ratio</th>
+<th style="text-align:left">source</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">worker_implement</td>
+<td class="num" style="text-align:right"><strong>4 213</strong></td>
+<td class="num" style="text-align:right"><strong>352</strong></td>
+<td class="num" style="text-align:right"><strong>12.0×</strong></td>
+<td style="text-align:left">exact match w/ dispatcher.assign_worker(task=implement) — the kanban-thrash driver</td>
+</tr>
+<tr>
+<td style="text-align:left">strategist</td>
+<td class="num" style="text-align:right">1 678</td>
+<td class="num" style="text-align:right">606</td>
+<td class="num" style="text-align:right">2.8×</td>
+<td style="text-align:left">wall-time-proportional (g55 ran 2.2× longer, strategist fires every 30 min)</td>
+</tr>
+<tr>
+<td style="text-align:left">worker_analyze</td>
+<td class="num" style="text-align:right">269</td>
+<td class="num" style="text-align:right">274</td>
+<td class="num" style="text-align:right">1.0×</td>
+<td style="text-align:left">identical — both ran ~270 analyze sessions</td>
+</tr>
+<tr>
+<td style="text-align:left">conductor</td>
+<td class="num" style="text-align:right">245</td>
+<td class="num" style="text-align:right">114</td>
+<td class="num" style="text-align:right">2.1×</td>
+<td style="text-align:left">wall-time-proportional</td>
+</tr>
+<tr>
+<td style="text-align:left">reporter</td>
+<td class="num" style="text-align:right">53</td>
+<td class="num" style="text-align:right">60</td>
+<td class="num" style="text-align:right">0.9×</td>
+<td style="text-align:left">~equal, gated by milestone interval</td>
+</tr>
+<tr>
+<td style="text-align:left">worker_fix</td>
+<td class="num" style="text-align:right">22</td>
+<td class="num" style="text-align:right">61</td>
+<td class="num" style="text-align:right">0.4×</td>
+<td style="text-align:left">cond did MORE fixes (g55&#x27;s stuck rows never reached &quot;finished&quot; so no fix opportunity)</td>
+</tr>
+<tr>
+<td style="text-align:left">phase2_critic</td>
+<td class="num" style="text-align:right">13</td>
+<td class="num" style="text-align:right">1</td>
+<td class="num" style="text-align:right">13×</td>
+<td style="text-align:left">g55 needed 13 critic rounds to PASS; cond got PASS iteration 1</td>
+</tr>
+<tr>
+<td style="text-align:left">phase2_builder</td>
+<td class="num" style="text-align:right">13</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">—</td>
+<td style="text-align:left">cond&#x27;s Phase 1 built the framework itself; g55 needed Phase 2 builder</td>
+</tr>
+<tr>
+<td style="text-align:left">TOTAL</td>
+<td class="num" style="text-align:right">6 533</td>
+<td class="num" style="text-align:right">1 506</td>
+<td class="num" style="text-align:right">4.3×</td>
+<td style="text-align:left"></td>
+</tr>
+</tbody></table>
+<p>Of the 5 027 extra sessions on g55: <strong>3 861 are the 12× implement-thrash multiplier</strong> (4 213 − 352). The other 1 166 are mostly wall-time-proportional strategist + conductor firings, plus a 12-round Phase 2 critic loop. The 12× implement multiplier IS the kanban-thrash consequence and is verified by exact match with dispatcher assignment counts.</p>
+<p><strong>Net:</strong> every reasonable per-session metric on g55 looks normal or shallow compared to cond. The 13× read-volume gap is upstream-driven (reassignment thrash) not downstream-driven (re-reading habit).</p>
+<p>The remaining (older) per-log analysis below is preserved for reference, but its &quot;77.7% fully redundant&quot; framing should be read as &quot;77.7% by line-range with no session/compaction awareness&quot; — once you account for both, the truly-wasted share is ~0.3% for both LLMs.</p>
+<hr/>
+<p>(Older per-log analysis — kept for historical context; superseded by the session-aware numbers above.)</p>
+<p>For cond, almost half of reads (44.7%) are first-time opens and another 17.8% are paginating into new territory; only 33.4% are fully redundant. For g55, only 15.4% of reads are first-time opens, <strong>77.7% are fully redundant</strong> by line range, and only 1.8% are paginating into new territory.</p>
+<p><strong>BUT</strong> — the line-range overlap test is not the full story. Some of those &quot;redundant&quot; reads are actually rational because the file was <em>modified between reads</em>. The implement worker on g55 has a strong verify-after-write habit: read a file, patch it via <code>shell_exec</code> / <code>patch_adapter_file</code>, then re-read to confirm. The second read returns new content even though the line range overlaps. Filtering those out:</p>
+<table>
+<thead><tr>
+<th style="text-align:left">category (modification-aware)</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">g55_%</th>
+<th class="num" style="text-align:right">cond</th>
+<th class="num" style="text-align:right">cond_%</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">first_read</td>
+<td class="num" style="text-align:right">20 556</td>
+<td class="num" style="text-align:right">15.4%</td>
+<td class="num" style="text-align:right">4 545</td>
+<td class="num" style="text-align:right">44.7%</td>
+</tr>
+<tr>
+<td style="text-align:left">not_covered_by_prior (new range)</td>
+<td class="num" style="text-align:right">12 731</td>
+<td class="num" style="text-align:right">9.5%</td>
+<td class="num" style="text-align:right">2 495</td>
+<td class="num" style="text-align:right">24.5%</td>
+</tr>
+<tr>
+<td style="text-align:left">covered_but_modified_after_prior (verify-after-write — rational)</td>
+<td class="num" style="text-align:right">15 033</td>
+<td class="num" style="text-align:right">11.3%</td>
+<td class="num" style="text-align:right">113</td>
+<td class="num" style="text-align:right">1.1%</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>truly_wasted (covered AND no modification since)</strong></td>
+<td class="num" style="text-align:right"><strong>85 242</strong></td>
+<td class="num" style="text-align:right"><strong>63.8%</strong></td>
+<td class="num" style="text-align:right"><strong>3 023</strong></td>
+<td class="num" style="text-align:right"><strong>29.7%</strong></td>
+</tr>
+</tbody></table>
+<p>So <strong>63.8% of g55&#x27;s reads are unambiguous waste</strong> (vs cond&#x27;s 29.7%) — not 77.7%. Still very high. Absolute volume: 85 242 truly-wasted reads on g55 vs 3 023 on cond (<strong>28× ratio</strong>).</p>
+<p><strong>When do the truly-wasted reads happen?</strong> Event-distance from the prior covering read:</p>
+<table>
+<thead><tr>
+<th style="text-align:left"></th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">% within 10 events back</td>
+<td class="num" style="text-align:right"><strong>27.8%</strong></td>
+<td class="num" style="text-align:right">17.7%</td>
+</tr>
+<tr>
+<td style="text-align:left">% within 50 events back</td>
+<td class="num" style="text-align:right">34.4%</td>
+<td class="num" style="text-align:right">42.8%</td>
+</tr>
+<tr>
+<td style="text-align:left">median distance</td>
+<td class="num" style="text-align:right"><strong>160 events</strong></td>
+<td class="num" style="text-align:right">93 events</td>
+</tr>
+<tr>
+<td style="text-align:left">p90 distance</td>
+<td class="num" style="text-align:right">1 048 events</td>
+<td class="num" style="text-align:right">1 175 events</td>
+</tr>
+</tbody></table>
+<p>Two distinct failure modes:</p>
+<ul>
+<li><strong>Tight-loop waste</strong> (27.8% of g55&#x27;s truly-wasted ≈ 23 700 reads):</li>
+</ul>
+<p>  read <code>(0, 200)</code>, do 2–10 intervening turns, then read <code>(0, 220)</code> —   same content, different cap. With 8 K compaction the model gets   ~identical head/tail back from both. The api_response between the   two reads emits only ~50 output tokens — barely any visible   reasoning. Closest thing to &quot;irrational&quot; in the data.</p>
+<ul>
+<li><strong>Far-back refresh</strong> (~70% of g55&#x27;s truly-wasted ≈ 60 000 reads):</li>
+</ul>
+<p>  re-read a file hundreds of turns later. Verified example:   <code>phase3_worker_implement.md</code> read at event #73 and #258 (185 events   apart), no intervening modification. Defensible as a recency-salience   workaround in long agent loops, but expensive.</p>
+<p><strong>Why does g55 do this and cond doesn&#x27;t?</strong> Best evidence-grounded answer: not a schema bug (both see identical tool schema), not a cap difference (both at 8 K), not a missing parameter (g55 uses non-zero offsets in 39.7% of calls). The compounding factor is <strong>per-turn output density</strong>. Median output_tokens/turn:</p>
+<table>
+<thead><tr>
+<th style="text-align:left">role</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">worker_implement</td>
+<td class="num" style="text-align:right">70</td>
+<td class="num" style="text-align:right">229</td>
+</tr>
+<tr>
+<td style="text-align:left">strategist</td>
+<td class="num" style="text-align:right">336</td>
+<td class="num" style="text-align:right">1 166</td>
+</tr>
+</tbody></table>
+<p>g55 emits ~3× less per turn → less in-context self-summary of what it already read → more refresh-via-re-read needed for older content. The tight-loop &quot;vary the limit&quot; pattern is a separate quirk: the model between two reads emits ~50 output tokens, hardly any visible reasoning, then tries a slightly different cap. Each per-decision step is defensible (verify a write, see the trimmed middle, refresh fading context), but they compound into 28× the truly-wasted volume.</p>
+<p><strong>The takeaway is not &quot;GPT-5.5 is broken&quot;.</strong> It&#x27;s that the same prompt and same cap produces materially different behavior depending on how densely the model talks per turn. Raising <code>tool_output_max_chars</code> (which you&#x27;ve now done) eliminates the compaction-driven re-reads. The remaining tight-loop and far-back-refresh patterns are model-shaped and would need a prompt rule (&quot;you have prior file content; do not re-read unless modified or you need a range outside your prior reads&quot;) to fully address.</p>
+<p><strong>H4 (g55 paginates everything, cond reads whole files) — CONFIRMED, and the pattern is even more specific.</strong></p>
+<p>Param shape distribution:</p>
+<table>
+<thead><tr>
+<th style="text-align:left">shape</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">no offset, no limit (defaults — whole file)</td>
+<td class="num" style="text-align:right"><strong>0 (0.0%)</strong></td>
+<td class="num" style="text-align:right"><strong>3 640 (35.8%)</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">limit only</td>
+<td class="num" style="text-align:right">0 (0.0%)</td>
+<td class="num" style="text-align:right">728 (7.2%)</td>
+</tr>
+<tr>
+<td style="text-align:left">offset only</td>
+<td class="num" style="text-align:right">0 (0.0%)</td>
+<td class="num" style="text-align:right">29 (0.3%)</td>
+</tr>
+<tr>
+<td style="text-align:left">both offset AND limit explicit</td>
+<td class="num" style="text-align:right"><strong>133 562 (100.0%)</strong></td>
+<td class="num" style="text-align:right">5 779 (56.8%)</td>
+</tr>
+</tbody></table>
+<p>g55 specifies both parameters on <strong>every single</strong> read_file call. Not one default-args call across 133 562 reads. Same tool schema for both LLMs — this is a learned behavior, not an API limitation.</p>
+<p><strong>Tool schema is bit-identical for both LLMs.</strong> I pulled the actual <code>api_request.tools[]</code> payload from one g55 and one cond worker log; the <code>read_file</code> schema (including the description &quot;Use offset and limit to read portions of large files&quot; and the <code>offset</code> parameter with &quot;default 0&quot;) is byte-for-byte the same. So the discrepancy is not a prompt or schema bug — both LLMs are told about both parameters.</p>
+<p><strong><code>tool_output_max_chars</code> was identical at runtime — 8 000 chars (the default) on both runs.</strong> Verified from the logs, not the config file (the configs were overwritten after the runs). Method: for every api_request, walk the conversation history and find compacted outputs containing <code>[...trimmed N chars...]</code>; their total length ≈ <code>max_chars</code>. Result on real data: 900 compacted outputs sampled on g55 and 24 on cond all cluster in the 8027–8030-char band. So the cap was 8 000 for both, applied uniformly across every agent (conductor, strategist, workers, supervisor, reporter, phase 0/1/2 — all 13 <code>AgentLoop(...)</code> callsites pass the same <code>self.config</code>).</p>
+<p>The cap is identical and so cannot differentially explain g55&#x27;s re-read behavior. But it makes one specific failure mode much worse on g55: at 8 KB compaction, most code files get head/tail trimmed (first ~4 000 chars + marker + last ~4 000 chars). When g55 asks for <code>(0, 200)</code> then <code>(0, 220)</code> then <code>(0, 120)</code> on the same file, each compacted result is <strong>nearly identical</strong> — same first 4 000 chars, same last 4 000 chars, only a different trim count in between. g55&#x27;s &quot;vary the limit, anchor at offset 0&quot; pattern is therefore extra wasteful: it re-receives essentially the same 8 KB view each time. cond&#x27;s pattern of moving the <em>offset</em> (<code>(500, 500)</code>, <code>(1000, 500)</code>) pulls different head+tail regions because the compacted window covers a different slice of the file.</p>
+<p>g55 <em>does</em> use non-zero offsets — <strong>52 980 calls (39.7%) have offset &gt; 0</strong>, spread across 2 152 distinct values. So the agent demonstrably knows the parameter exists. The most-common single combinations all use <code>offset = 0</code> because that bucket has many fewer distinct values to spread across; the non-zero-offset half spreads across thousands of values.</p>
+<p><strong>Top (offset, limit) combinations on g55 — <code>offset = 0</code> dominates the top buckets, but only because non-zero offsets are spread thinner:</strong></p>
+<table>
+<thead><tr>
+<th class="num" style="text-align:right">n</th>
+<th class="num" style="text-align:right">offset</th>
+<th class="num" style="text-align:right">limit</th>
+</tr></thead>
+<tbody>
+<tr>
+<td class="num" style="text-align:right">11 230</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">500</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">9 592</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">220</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">8 082</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">200</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">7 652</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">120</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">5 320</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">260</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">5 200</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">300</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">5 118</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">400</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">4 749</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">80</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">3 557</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">160</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">3 465</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">100</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">3 160</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">180</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">2 811</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">240</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">2 259</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">1000</td>
+</tr>
+</tbody></table>
+<p>g55 reads &quot;the first 200 lines&quot;, then &quot;the first 220 lines&quot;, then &quot;the first 120 lines&quot;, then &quot;the first 300 lines&quot; of the same file, repeatedly. Different limit, same <code>offset=0</code>. Massive overlap by construction.</p>
+<p><strong>cond&#x27;s top combinations</strong> — defaults plus genuine paging:</p>
+<pre><code>offset=def  limit=def    n=3 640   (full file)
+offset=def  limit=100    n=  148
+offset=500  limit=500    n=  135   ← page 2
+offset=def  limit=200    n=  135
+offset=200  limit=200    n=   52
+offset=100  limit=200    n=   48
+offset=1000 limit=500    n=   36   ← page 3</code></pre>
+<p>cond mostly reads the whole file with defaults; when it paginates, it actually advances the offset.</p>
+<p><strong>Same-path re-read shape:</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left"></th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">(log, path) pairs with ≥2 reads</td>
+<td class="num" style="text-align:right">7 176</td>
+<td class="num" style="text-align:right">1 593</td>
+</tr>
+<tr>
+<td style="text-align:left">mean reads per such pair</td>
+<td class="num" style="text-align:right"><strong>16.75</strong></td>
+<td class="num" style="text-align:right">4.53</td>
+</tr>
+<tr>
+<td style="text-align:left">mean DISTINCT (offset, limit) values per pair</td>
+<td class="num" style="text-align:right"><strong>10.03</strong></td>
+<td class="num" style="text-align:right">4.17</td>
+</tr>
+<tr>
+<td style="text-align:left">fraction with all-different (offset, limit) per read</td>
+<td class="num" style="text-align:right"><strong>52.6%</strong></td>
+<td class="num" style="text-align:right">90.7%</td>
+</tr>
+<tr>
+<td style="text-align:left">fraction with all-identical (offset, limit)</td>
+<td class="num" style="text-align:right">4.2%</td>
+<td class="num" style="text-align:right">4.9%</td>
+</tr>
+</tbody></table>
+<p>When g55 hits the same file ~17 times in one agent log, it uses ~10 different limit values to do it. cond hits the same file ~4.5 times mostly with different (offset, limit) — that&#x27;s real paging through new pages, not re-cutting the top.</p>
+<p><strong>What&#x27;s happening immediately before a redundant read?</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">previous tool</th>
+<th class="num" style="text-align:right">g55 redundant</th>
+<th class="num" style="text-align:right">g55_%</th>
+<th class="num" style="text-align:right">cond redundant</th>
+<th class="num" style="text-align:right">cond_%</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong>read_file</strong></td>
+<td class="num" style="text-align:right"><strong>91 883</strong></td>
+<td class="num" style="text-align:right"><strong>88.6%</strong></td>
+<td class="num" style="text-align:right">2 232</td>
+<td class="num" style="text-align:right">65.8%</td>
+</tr>
+<tr>
+<td style="text-align:left">shell_exec</td>
+<td class="num" style="text-align:right">6 718</td>
+<td class="num" style="text-align:right">6.5%</td>
+<td class="num" style="text-align:right">655</td>
+<td class="num" style="text-align:right">19.3%</td>
+</tr>
+<tr>
+<td style="text-align:left">grep_file</td>
+<td class="num" style="text-align:right">2 420</td>
+<td class="num" style="text-align:right">2.3%</td>
+<td class="num" style="text-align:right">247</td>
+<td class="num" style="text-align:right">7.3%</td>
+</tr>
+<tr>
+<td style="text-align:left">memory_search</td>
+<td class="num" style="text-align:right">681</td>
+<td class="num" style="text-align:right">0.7%</td>
+<td class="num" style="text-align:right">138</td>
+<td class="num" style="text-align:right">4.1%</td>
+</tr>
+<tr>
+<td style="text-align:left">read_board</td>
+<td class="num" style="text-align:right">644</td>
+<td class="num" style="text-align:right">0.6%</td>
+<td class="num" style="text-align:right">28</td>
+<td class="num" style="text-align:right">0.8%</td>
+</tr>
+</tbody></table>
+<p><strong>88.6% of g55&#x27;s redundant reads are immediately preceded by another read_file</strong> — chained reads in tight succession with no other tool work between them. The agent does <code>read_file(strategy.py, limit=200)</code> → <code>read_file(strategy.py, limit=220)</code> → <code>read_file(strategy.py, limit=120)</code> without thinking in between.</p>
+<p><strong>File-type breakdown:</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">category</th>
+<th class="num" style="text-align:right">g55 reads</th>
+<th class="num" style="text-align:right">g55 redundant_%</th>
+<th class="num" style="text-align:right">cond reads</th>
+<th class="num" style="text-align:right">cond redundant_%</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">code_py</td>
+<td class="num" style="text-align:right"><strong>83 346</strong></td>
+<td class="num" style="text-align:right"><strong>81.7%</strong></td>
+<td class="num" style="text-align:right">6 678</td>
+<td class="num" style="text-align:right">35.0%</td>
+</tr>
+<tr>
+<td style="text-align:left">markdown</td>
+<td class="num" style="text-align:right">26 507</td>
+<td class="num" style="text-align:right">77.9%</td>
+<td class="num" style="text-align:right">1 213</td>
+<td class="num" style="text-align:right">54.6%</td>
+</tr>
+<tr>
+<td style="text-align:left">json_data</td>
+<td class="num" style="text-align:right">14 733</td>
+<td class="num" style="text-align:right">63.6%</td>
+<td class="num" style="text-align:right">1 166</td>
+<td class="num" style="text-align:right">21.6%</td>
+</tr>
+<tr>
+<td style="text-align:left">yaml</td>
+<td class="num" style="text-align:right">3 548</td>
+<td class="num" style="text-align:right">78.9%</td>
+<td class="num" style="text-align:right">532</td>
+<td class="num" style="text-align:right">9.8%</td>
+</tr>
+<tr>
+<td style="text-align:left">log</td>
+<td class="num" style="text-align:right">722</td>
+<td class="num" style="text-align:right">65.4%</td>
+<td class="num" style="text-align:right">76</td>
+<td class="num" style="text-align:right">80.3%</td>
+</tr>
+<tr>
+<td style="text-align:left">data_file</td>
+<td class="num" style="text-align:right">1 635</td>
+<td class="num" style="text-align:right">31.2%</td>
+<td class="num" style="text-align:right">95</td>
+<td class="num" style="text-align:right">0.0%</td>
+</tr>
+</tbody></table>
+<p>g55&#x27;s redundancy is heaviest on Python code (82% redundant) — the framework files that don&#x27;t change.</p>
+<p><strong>Top redundant files on g55</strong> (out of 48 187 redundant incidents):</p>
+<table>
+<thead><tr>
+<th class="num" style="text-align:right">#</th>
+<th class="num" style="text-align:right">redundant reads</th>
+<th style="text-align:left">path</th>
+</tr></thead>
+<tbody>
+<tr>
+<td class="num" style="text-align:right">1</td>
+<td class="num" style="text-align:right">2 118</td>
+<td style="text-align:left"><code>backtest/data.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">2</td>
+<td class="num" style="text-align:right">1 833</td>
+<td style="text-align:left"><code>playbook.md</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">3</td>
+<td class="num" style="text-align:right">1 373</td>
+<td style="text-align:left"><code>backtest/strategy.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">4</td>
+<td class="num" style="text-align:right">1 310</td>
+<td style="text-align:left"><code>backtest/metrics.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">5</td>
+<td class="num" style="text-align:right">1 272</td>
+<td style="text-align:left"><code>backtest/engine.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">6</td>
+<td class="num" style="text-align:right">1 209</td>
+<td style="text-align:left"><code>backtest/run_backtest.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">7</td>
+<td class="num" style="text-align:right">1 084</td>
+<td style="text-align:left"><code>backtest/tests/test_engine.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">8</td>
+<td class="num" style="text-align:right">1 063</td>
+<td style="text-align:left"><code>backtest/tests/test_integration.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">9</td>
+<td class="num" style="text-align:right">1 060</td>
+<td style="text-align:left"><code>backtest/tests/test_metrics.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">10</td>
+<td class="num" style="text-align:right">972</td>
+<td style="text-align:left"><code>backtest/config.py</code></td>
+</tr>
+</tbody></table>
+<p>**8 of the top 10 are <code>backtest/*</code> framework files.** Every fresh implement worker re-reads the framework from line 0 with whatever limit it picks that turn. The framework is essentially static across the run — re-reading it 1 000+ times each is pure waste.</p>
+<p><strong>Top redundant files on cond</strong> (out of 578 incidents):</p>
+<table>
+<thead><tr>
+<th class="num" style="text-align:right">#</th>
+<th class="num" style="text-align:right">redundant reads</th>
+<th style="text-align:left">path</th>
+</tr></thead>
+<tbody>
+<tr>
+<td class="num" style="text-align:right">1</td>
+<td class="num" style="text-align:right">199</td>
+<td style="text-align:left"><code>meta/notes_inbox.md</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">2</td>
+<td class="num" style="text-align:right">50</td>
+<td style="text-align:left"><code>meta/directives.md</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">3</td>
+<td class="num" style="text-align:right">41</td>
+<td style="text-align:left"><code>meta/directive_acks.jsonl</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">4</td>
+<td class="num" style="text-align:right">26</td>
+<td style="text-align:left"><code>backtest/strategy.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">5</td>
+<td class="num" style="text-align:right">26</td>
+<td style="text-align:left"><code>meta/instructions/from_user.md</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">6</td>
+<td class="num" style="text-align:right">24</td>
+<td style="text-align:left"><code>playbook.md</code></td>
+</tr>
+</tbody></table>
+<p>cond&#x27;s redundancy is dominated by <strong>shared-state files</strong> that other agents may have updated between reads (<code>notes_inbox</code>, <code>directives</code>, <code>instructions/from_user</code>). That&#x27;s a defensible re-read — those files genuinely change. cond&#x27;s redundancy is mostly justified.</p>
+<p><strong>The mystery in one sentence:</strong></p>
+<p>g55 re-slices the same files at different (offset, limit) windows, chained back-to-back, producing <strong>77.7% fully-redundant reads by content</strong>. The redundancy is not a missing-parameter problem — g55 explicitly specifies both <code>offset</code> and <code>limit</code> on every call and uses 2 152 distinct offset values across the run — it&#x27;s a behavioral pattern: g55 keeps asking for slightly different cuts of files it has already loaded into context.</p>
+<p><strong>H5 (g55 emits less per turn, accumulates less context, must rebuild via reads) — CONFIRMED.</strong></p>
+<p>Per-response output tokens (worker_implement):</p>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">mean output_tokens</td>
+<td class="num" style="text-align:right">311</td>
+<td class="num" style="text-align:right"><strong>893</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">median output_tokens</td>
+<td class="num" style="text-align:right"><strong>70</strong></td>
+<td class="num" style="text-align:right">229</td>
+</tr>
+<tr>
+<td style="text-align:left">p90 output_tokens</td>
+<td class="num" style="text-align:right">535</td>
+<td class="num" style="text-align:right">1 497</td>
+</tr>
+<tr>
+<td style="text-align:left">p99 output_tokens</td>
+<td class="num" style="text-align:right">3 024</td>
+<td class="num" style="text-align:right">16 603</td>
+</tr>
+</tbody></table>
+<p>cond emits <strong>3× more output per turn</strong>. Conversation history accumulates ~3× faster on cond, which is why its per-turn input grows to 98 k tokens while g55 stays around 54 k. The chain: smaller outputs → less history per round → less context retained → must refetch with read_file.</p>
+<p>(Caveat: g55&#x27;s OpenAI Responses API hides reasoning tokens server-side; output_tokens here is the API&#x27;s <code>output_tokens</code> field which I cannot independently verify includes reasoning. But the visible-output gap is real and matches the read-rebuild pattern.)</p>
+<p><strong>H6 (apples-to-apples on clean assignments) — g55 still excessive but most of the gap is from thrashing.</strong></p>
+<p>Restricted to experiments that reached <code>status=&#x27;analyzed&#x27;</code> with ≤ 2 implement assignments (= the kanban worked normally):</p>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">clean experiments</td>
+<td class="num" style="text-align:right">250</td>
+<td class="num" style="text-align:right">240</td>
+</tr>
+<tr>
+<td style="text-align:left">read_file calls per clean implement assignment — mean</td>
+<td class="num" style="text-align:right">28.9</td>
+<td class="num" style="text-align:right">21.4</td>
+</tr>
+<tr>
+<td style="text-align:left">read_file calls per clean implement assignment — median</td>
+<td class="num" style="text-align:right">24</td>
+<td class="num" style="text-align:right">20</td>
+</tr>
+<tr>
+<td style="text-align:left">read_file calls per clean implement assignment — p90</td>
+<td class="num" style="text-align:right">48</td>
+<td class="num" style="text-align:right">30</td>
+</tr>
+<tr>
+<td style="text-align:left">read_file calls per clean implement assignment — max</td>
+<td class="num" style="text-align:right">89</td>
+<td class="num" style="text-align:right">61</td>
+</tr>
+</tbody></table>
+<p>Per clean implement assignment, g55 still reads <strong>35% more</strong>. The overall 13× ratio decomposes as <strong>~1.35× behavioral excess × ~10× thrashing volume</strong> (4 213 implement assignments vs 352). Math: 1.35 × 10 ≈ 13. Both factors are present; thrashing is the dominant one.</p>
+<h3>Synthesized explanation</h3>
+<p>The 13× read_file ratio is not a single failure. It&#x27;s three reinforcing factors:</p>
+<ol>
+<li><strong>g55 emits 3× less per turn</strong> (median 70 output tokens vs 229). Smaller outputs → smaller accumulated history → ~half the per-turn context (54 k vs 98 k input_tokens) → must refetch state via <code>read_file</code>.</li>
+<li><strong>g55 never reads full files</strong> (0 full reads vs cond&#x27;s 3 640). Always paginates with offset/limit → multiple calls to retrieve the same logical content.</li>
+<li><strong>g55 thrashes</strong> (mean 11.2 implement assignments per experiment vs cond&#x27;s 1.3). Each fresh worker turn starts cold and re-reads the framework + experiment files from scratch.</li>
+</ol>
+<p>What it is <em>not</em>:</p>
+<ul>
+<li>It is not &quot;g55 is fed less context&quot; — g55 is fed <em>less</em>, but that&#x27;s a</li>
+</ul>
+<p>  consequence of (1), not an upstream input choice.</p>
+<ul>
+<li>It is not &quot;g55 gets truncated read results&quot; — call-for-call file</li>
+</ul>
+<p>  bandwidth is the same on both.</p>
+<ul>
+<li>It is not &quot;g55 paginates the same file in tight succession to read</li>
+</ul>
+<p>  faster&quot; — cond does that more (median 10 s re-read interval, 70.5%   within 30 s); g55&#x27;s re-reads are mostly across-turn (median 123 s,   44.1% within 30 s).</p>
+<p>Productive? Three signals that say no:</p>
+<ul>
+<li>On clean experiments, g55 still makes 35% more reads to accomplish the</li>
+</ul>
+<p>  same work the kanban accepts from cond.</p>
+<ul>
+<li>Despite 13× more file reads, g55 still has 30.5% blocked transitions</li>
+</ul>
+<p>  and 24% smoke refusals; cond with 1/13 the reads has 0.7% and 0%. The   reads do not translate into better state.</p>
+<ul>
+<li>The most-read paths (top of the list below) overlap exactly with the</li>
+</ul>
+<p>  most-thrashed experiments — re-reading is the <em>symptom</em>, not the   remedy.</p>
+<p>Per-role and per-path breakdown (kept from the earlier section):</p>
+<table>
+<thead><tr>
+<th style="text-align:left">bucket</th>
+<th class="num" style="text-align:right">g55 read_file</th>
+<th class="num" style="text-align:right">cond read_file</th>
+<th class="num" style="text-align:right">ratio</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">worker_implement</td>
+<td class="num" style="text-align:right">96 611</td>
+<td class="num" style="text-align:right">6 935</td>
+<td class="num" style="text-align:right"><strong>13.9×</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">strategist</td>
+<td class="num" style="text-align:right">25 120</td>
+<td class="num" style="text-align:right">608</td>
+<td class="num" style="text-align:right"><strong>41.3×</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">worker_analyze</td>
+<td class="num" style="text-align:right">5 177</td>
+<td class="num" style="text-align:right">1 718</td>
+<td class="num" style="text-align:right">3.0×</td>
+</tr>
+<tr>
+<td style="text-align:left">conductor</td>
+<td class="num" style="text-align:right">4 357</td>
+<td class="num" style="text-align:right">576</td>
+<td class="num" style="text-align:right">7.6×</td>
+</tr>
+<tr>
+<td style="text-align:left">reporter</td>
+<td class="num" style="text-align:right">1 104</td>
+<td class="num" style="text-align:right">51</td>
+<td class="num" style="text-align:right">21.6×</td>
+</tr>
+<tr>
+<td style="text-align:left">worker_fix</td>
+<td class="num" style="text-align:right">734</td>
+<td class="num" style="text-align:right">269</td>
+<td class="num" style="text-align:right">2.7×</td>
+</tr>
+</tbody></table>
+<p><strong>Within-log repeat factor</strong> (total reads ÷ unique paths in that log):</p>
+<ul>
+<li>g55: <strong>6.5×</strong> — every file opened gets re-opened 5–6 more times in the same agent loop</li>
+<li>cond: <strong>2.2×</strong> — much less re-reading</li>
+</ul>
+<p><strong>Top files read on g55 — the same names that dominate implement-task churn:</strong></p>
+<table>
+<thead><tr>
+<th class="num" style="text-align:right">reads</th>
+<th style="text-align:left">path</th>
+</tr></thead>
+<tbody>
+<tr>
+<td class="num" style="text-align:right">4 925</td>
+<td style="text-align:left"><code>backtest/data.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">4 148</td>
+<td style="text-align:left"><code>experiments/flow_heatmap_unet_forecaster/run_experiment.py</code> ← 420 implement assignments</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">3 672</td>
+<td style="text-align:left"><code>experiments/client_price_hysteresis_thresholds/run_experiment.py</code> ← 242 assignments</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">3 369</td>
+<td style="text-align:left"><code>experiments/latent_demand_queue_release_flow/run_experiment.py</code> ← 267 assignments</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">3 292</td>
+<td style="text-align:left"><code>experiments/masked_market_imputation_flow_ranker/run_experiment.py</code> ← 266 assignments</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">3 048</td>
+<td style="text-align:left"><code>experiments/round_size_template_flow_ranker/strategy.py</code> ← 303 assignments</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">2 644</td>
+<td style="text-align:left"><code>backtest/metrics.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">2 623</td>
+<td style="text-align:left"><code>backtest/strategy.py</code></td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">2 243</td>
+<td style="text-align:left"><code>playbook.md</code></td>
+</tr>
+</tbody></table>
+<p>The top experiment-file reads map <strong>1:1</strong> with the most-thrashed experiments (Section 7). Each new implement worker re-reads the existing experiment code before deciding what to do, finds it unchanged, exits — and a fresh worker re-opens the same files all over again.</p>
+<p><strong>Three pieces of evidence the re-reads are not buying anything:</strong></p>
+<ol>
+<li><strong>Within-turn repetition.</strong> A 6.5× repeat factor inside a single agent</li>
+</ol>
+<p>   log means each file gets re-opened 5 extra times in the same agent loop    — the agent isn&#x27;t learning new information from those re-reads.</p>
+<ol>
+<li><strong>Per-experiment correlation.</strong> The top-10 most-read paths are dominated</li>
+</ol>
+<p>   by the top-10 most-thrashed experiments. If re-reading were productive it    would unstick the experiment; instead the same workers keep coming back    to the same files in the same state and exiting again.</p>
+<ol>
+<li><strong>No effect on kanban discipline.</strong> Despite <strong>13× more file reads</strong>, g55</li>
+</ol>
+<p>   still has 30.5% blocked transitions and 24% smoke refusals; cond with    1/13 the reads has 0.7% and 0%. The reads aren&#x27;t translating into &quot;I    now know what the right next status is.&quot;</p>
+<p><strong>Strategist is the single worst offender:</strong> 25 120 read_file calls in <code>strategist.jsonl</code> alone vs cond&#x27;s 608 (<strong>41×</strong>). Per strategist api_request the rate is 1.59 reads/turn on g55 vs 0.19 on cond — the strategist is re-loading the full notes / data_report / playbook context on every proposal turn instead of relying on its in-context memory.</p>
+<hr/>
+<h2>4. Kanban / status discipline — <code>update_experiment</code> outcomes</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">outcome</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">g55 %</th>
+<th class="num" style="text-align:right">cond</th>
+<th class="num" style="text-align:right">cond %</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">total <code>update_experiment</code> calls</td>
+<td class="num" style="text-align:right"><strong>3 298</strong></td>
+<td class="num" style="text-align:right">—</td>
+<td class="num" style="text-align:right"><strong>896</strong></td>
+<td class="num" style="text-align:right">—</td>
+</tr>
+<tr>
+<td style="text-align:left">calls with <code>status=</code> arg</td>
+<td class="num" style="text-align:right">630</td>
+<td class="num" style="text-align:right">—</td>
+<td class="num" style="text-align:right">537</td>
+<td class="num" style="text-align:right">—</td>
+</tr>
+<tr>
+<td style="text-align:left">calls without <code>status=</code> arg</td>
+<td class="num" style="text-align:right">2 668</td>
+<td class="num" style="text-align:right">—</td>
+<td class="num" style="text-align:right">359</td>
+<td class="num" style="text-align:right">—</td>
+</tr>
+<tr>
+<td style="text-align:left">kanban-BLOCKED transitions</td>
+<td class="num" style="text-align:right"><strong>192</strong></td>
+<td class="num" style="text-align:right"><strong>30.5%</strong> of status-attempts</td>
+<td class="num" style="text-align:right"><strong>4</strong></td>
+<td class="num" style="text-align:right"><strong>0.7%</strong> of status-attempts</td>
+</tr>
+<tr>
+<td style="text-align:left">results REFUSED (smoke/partial)</td>
+<td class="num" style="text-align:right"><strong>798</strong></td>
+<td class="num" style="text-align:right">24.2% of calls</td>
+<td class="num" style="text-align:right"><strong>0</strong></td>
+<td class="num" style="text-align:right">0.0% of calls</td>
+</tr>
+<tr>
+<td style="text-align:left">idempotent (no-op)</td>
+<td class="num" style="text-align:right">1 448</td>
+<td class="num" style="text-align:right"><strong>43.9%</strong> of calls</td>
+<td class="num" style="text-align:right">59</td>
+<td class="num" style="text-align:right"><strong>6.6%</strong> of calls</td>
+</tr>
+<tr>
+<td style="text-align:left">APPLIED (real progress)</td>
+<td class="num" style="text-align:right">860</td>
+<td class="num" style="text-align:right"><strong>26.1%</strong> of calls</td>
+<td class="num" style="text-align:right">833</td>
+<td class="num" style="text-align:right"><strong>93.0%</strong> of calls</td>
+</tr>
+</tbody></table>
+<p><strong>Read:</strong> Half of g55&#x27;s <code>update_experiment</code> calls do nothing useful (44% idempotent + 24% refused smoke + 6% kanban blocked = 74% no-op). cond gets <strong>93% APPLIED rate</strong>. Both LLMs make similar absolute numbers of APPLIED state changes (860 vs 833) — cond achieves the same effect with 1/4 the call volume.</p>
+<p><strong>Top blocked transitions (g55):</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">transition</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">implemented → finished</td>
+<td class="num" style="text-align:right"><strong>73</strong></td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">implemented → running</td>
+<td class="num" style="text-align:right">42</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">to_implement → running</td>
+<td class="num" style="text-align:right">28</td>
+<td class="num" style="text-align:right">1</td>
+</tr>
+<tr>
+<td style="text-align:left">running → checked</td>
+<td class="num" style="text-align:right">21</td>
+<td class="num" style="text-align:right">2</td>
+</tr>
+<tr>
+<td style="text-align:left">implemented → done</td>
+<td class="num" style="text-align:right">4</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">to_implement → finished</td>
+<td class="num" style="text-align:right">4</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">running → analyzed</td>
+<td class="num" style="text-align:right">4</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">analyzed → checked</td>
+<td class="num" style="text-align:right">3</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">checked → implemented</td>
+<td class="num" style="text-align:right">3</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">done → analyzed</td>
+<td class="num" style="text-align:right">2</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+</tbody></table>
+<p>GPT-5.5 systematically reaches for the destination state (&quot;finished&quot;, &quot;running&quot;) instead of the next legal edge (&quot;checked&quot;). Claude 4.7 makes almost no such mistakes.</p>
+<p><strong>Refusal reasons (g55):</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">reason</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">smoke=true</td>
+<td class="num" style="text-align:right"><strong>773</strong></td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">partial=true</td>
+<td class="num" style="text-align:right">12</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">run_scope=&#x27;canonical_full&#x27;</td>
+<td class="num" style="text-align:right">4</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">run_scope=&#x27;smoke&#x27;</td>
+<td class="num" style="text-align:right">2</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">run_scope=&#x27;canonical_bounded_full&#x27;</td>
+<td class="num" style="text-align:right">2</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">6× misc invented run_scope strings</td>
+<td class="num" style="text-align:right">6</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+</tbody></table>
+<p>cond simply does not try to ship non-canonical payloads as canonical.</p>
+<hr/>
+<h2>5. Throughput (experiments per LLM-hour)</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55 (GPT-5.5)</th>
+<th class="num" style="text-align:right">cond (Claude 4.7)</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">pipeline wall time</td>
+<td class="num" style="text-align:right">109.1 h</td>
+<td class="num" style="text-align:right">49.7 h</td>
+</tr>
+<tr>
+<td style="text-align:left">total LLM wall time</td>
+<td class="num" style="text-align:right">444.8 h</td>
+<td class="num" style="text-align:right">248.1 h</td>
+</tr>
+<tr>
+<td style="text-align:left">experiments dispatched</td>
+<td class="num" style="text-align:right">295</td>
+<td class="num" style="text-align:right">250</td>
+</tr>
+<tr>
+<td style="text-align:left">experiments analyzed</td>
+<td class="num" style="text-align:right">264</td>
+<td class="num" style="text-align:right">254</td>
+</tr>
+<tr>
+<td style="text-align:left">dispatched / hour wall</td>
+<td class="num" style="text-align:right">2.70</td>
+<td class="num" style="text-align:right"><strong>5.03</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">analyzed / hour wall</td>
+<td class="num" style="text-align:right">2.42</td>
+<td class="num" style="text-align:right"><strong>5.11</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">analyzed / LLM-hour</td>
+<td class="num" style="text-align:right">0.59</td>
+<td class="num" style="text-align:right"><strong>1.02</strong></td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>LLM-seconds per analyzed exp</strong></td>
+<td class="num" style="text-align:right"><strong>6 065 s</strong></td>
+<td class="num" style="text-align:right"><strong>3 516 s</strong></td>
+</tr>
+</tbody></table>
+<p>cond converts LLM-seconds to analyzed-experiments <strong>1.72× more efficiently</strong>.</p>
+<hr/>
+<h2>6. Zombie rows and out-of-band canonical launches</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">rows at <code>implemented</code></td>
+<td class="num" style="text-align:right"><strong>64</strong></td>
+<td class="num" style="text-align:right"><strong>0</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">rows at <code>checked</code></td>
+<td class="num" style="text-align:right">14</td>
+<td class="num" style="text-align:right">5</td>
+</tr>
+<tr>
+<td style="text-align:left">rows at <code>to_implement</code></td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">94</td>
+</tr>
+<tr>
+<td style="text-align:left">ZOMBIE rows (implemented + canonical metrics.json on disk)</td>
+<td class="num" style="text-align:right"><strong>25</strong></td>
+<td class="num" style="text-align:right"><strong>0</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">parked by Conductor</td>
+<td class="num" style="text-align:right">114</td>
+<td class="num" style="text-align:right">99</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>nohup … run_experiment.py</code> mentions in implement logs</td>
+<td class="num" style="text-align:right">857</td>
+<td class="num" style="text-align:right">632</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>experiments where worker bypassed dispatcher</strong></td>
+<td class="num" style="text-align:right"><strong>28</strong></td>
+<td class="num" style="text-align:right"><strong>3</strong></td>
+</tr>
+</tbody></table>
+<p><strong>Read:</strong> GPT-5.5 has 28 experiments where the implement worker launched the canonical itself instead of going through <code>status=&#x27;checked&#x27;</code>. That spawns the entire kanban-deadend pattern documented in #373, #375, #377. Claude 4.7 did this on only 3 experiments — and the workers it did do this on weren&#x27;t stranded as widely (cond has zero zombie rows).</p>
+<hr/>
+<h2>7. Implement-task churn</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">total implement assignments</td>
+<td class="num" style="text-align:right"><strong>4 213</strong></td>
+<td class="num" style="text-align:right">352</td>
+</tr>
+<tr>
+<td style="text-align:left">total analyze assignments</td>
+<td class="num" style="text-align:right">269</td>
+<td class="num" style="text-align:right">274</td>
+</tr>
+<tr>
+<td style="text-align:left">ratio implement / analyze</td>
+<td class="num" style="text-align:right"><strong>15.7×</strong></td>
+<td class="num" style="text-align:right"><strong>1.3×</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">unique experiments getting any implement assignment</td>
+<td class="num" style="text-align:right">377</td>
+<td class="num" style="text-align:right">268</td>
+</tr>
+<tr>
+<td style="text-align:left">experiments with ≥10 implement assignments</td>
+<td class="num" style="text-align:right"><strong>55</strong></td>
+<td class="num" style="text-align:right"><strong>1</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">experiments with ≥20 implement assignments</td>
+<td class="num" style="text-align:right"><strong>33</strong></td>
+<td class="num" style="text-align:right"><strong>0</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">max implement assignments on one experiment</td>
+<td class="num" style="text-align:right"><strong>420</strong></td>
+<td class="num" style="text-align:right"><strong>14</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">mean implement assignments per experiment</td>
+<td class="num" style="text-align:right"><strong>11.18</strong></td>
+<td class="num" style="text-align:right"><strong>1.31</strong></td>
+</tr>
+</tbody></table>
+<p><strong>Read:</strong> This is the single most expensive symptom of GPT-5.5&#x27;s indiscipline. The implement-vs-analyze ratio should be roughly 1:1 in a healthy run (cond&#x27;s 1.3×). g55&#x27;s 15.7× means a single experiment gets implemented on average 11 times before reaching the analyzer.</p>
+<p><strong>Top 5 most-reassigned experiments per workspace:</strong></p>
+<table>
+<thead><tr>
+<th class="num" style="text-align:right">g55_assigns</th>
+<th style="text-align:left">g55 exp</th>
+<th class="num" style="text-align:right">cond_assigns</th>
+<th style="text-align:left">cond exp</th>
+</tr></thead>
+<tbody>
+<tr>
+<td class="num" style="text-align:right">420</td>
+<td style="text-align:left">flow_heatmap_unet_forecaster</td>
+<td class="num" style="text-align:right">14</td>
+<td style="text-align:left">per_category_x_bucket_x_tod_residual_target_catboost</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">303</td>
+<td style="text-align:left">round_size_template_flow_ranker</td>
+<td class="num" style="text-align:right">7</td>
+<td style="text-align:left">rfq_traded_price_drift_target_lgb_rfq_level_5seed</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">280</td>
+<td style="text-align:left">dynamic_blockmodel_coflow_ranker</td>
+<td class="num" style="text-align:right">7</td>
+<td style="text-align:left">pairwise_tournament_rank_lgb_learnable_margin</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">267</td>
+<td style="text-align:left">latent_demand_queue_release_flow</td>
+<td class="num" style="text-align:right">6</td>
+<td style="text-align:left">market_beta_residual_target_lgb_sector_focus_60m</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">266</td>
+<td style="text-align:left">masked_market_imputation_flow_ranker</td>
+<td class="num" style="text-align:right">5</td>
+<td style="text-align:left">neural_hawkes_rfq_arrival_marked_point_process</td>
+</tr>
+</tbody></table>
+<p>GPT-5.5 reassigned ONE experiment (<code>flow_heatmap_unet_forecaster</code>) 420 times. Claude&#x27;s worst case is 14.</p>
+<hr/>
+<h2>8. Code production</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">experiments with code on disk</td>
+<td class="num" style="text-align:right">377</td>
+<td class="num" style="text-align:right">270</td>
+</tr>
+<tr>
+<td style="text-align:left">strategy.py mean LOC</td>
+<td class="num" style="text-align:right">934</td>
+<td class="num" style="text-align:right">475</td>
+</tr>
+<tr>
+<td style="text-align:left">strategy.py median LOC</td>
+<td class="num" style="text-align:right">903</td>
+<td class="num" style="text-align:right">454</td>
+</tr>
+<tr>
+<td style="text-align:left">strategy.py max LOC</td>
+<td class="num" style="text-align:right">1 830</td>
+<td class="num" style="text-align:right">1 283</td>
+</tr>
+<tr>
+<td style="text-align:left">run_experiment.py mean LOC</td>
+<td class="num" style="text-align:right">1 282</td>
+<td class="num" style="text-align:right">1 302</td>
+</tr>
+<tr>
+<td style="text-align:left">run_experiment.py median LOC</td>
+<td class="num" style="text-align:right">1 283</td>
+<td class="num" style="text-align:right">1 355</td>
+</tr>
+<tr>
+<td style="text-align:left">run_experiment.py max LOC</td>
+<td class="num" style="text-align:right">2 344</td>
+<td class="num" style="text-align:right">2 076</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>total LOC (strategy + runner) across all experiments</strong></td>
+<td class="num" style="text-align:right"><strong>835 546</strong></td>
+<td class="num" style="text-align:right"><strong>479 571</strong></td>
+</tr>
+</tbody></table>
+<p><strong>Read:</strong> g55 writes <strong>~2× longer strategy files</strong> on average. Runner length is nearly identical (1 282 vs 1 302) — both LLMs converge on the required framework boilerplate. The strategy-side bloat in g55 is its own choice: more code-paths per experiment, often defensive scaffolding the analyzer doesn&#x27;t end up needing.</p>
+<hr/>
+<h2>9. Debrief writeups</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">experiments with <code>debrief.md</code></td>
+<td class="num" style="text-align:right">365</td>
+<td class="num" style="text-align:right">253</td>
+</tr>
+<tr>
+<td style="text-align:left">total debrief chars</td>
+<td class="num" style="text-align:right"><strong>4 836 169</strong></td>
+<td class="num" style="text-align:right">3 538 041</td>
+</tr>
+<tr>
+<td style="text-align:left">mean debrief lines</td>
+<td class="num" style="text-align:right">154</td>
+<td class="num" style="text-align:right"><strong>196</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">median debrief lines</td>
+<td class="num" style="text-align:right">143</td>
+<td class="num" style="text-align:right"><strong>190</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">p90 debrief lines</td>
+<td class="num" style="text-align:right">224</td>
+<td class="num" style="text-align:right">267</td>
+</tr>
+<tr>
+<td style="text-align:left">max debrief lines</td>
+<td class="num" style="text-align:right"><strong>4 202</strong> (one runaway)</td>
+<td class="num" style="text-align:right">409</td>
+</tr>
+<tr>
+<td style="text-align:left">total <code>## <em>Verification</em></code> sections</td>
+<td class="num" style="text-align:right"><strong>275</strong></td>
+<td class="num" style="text-align:right">10</td>
+</tr>
+<tr>
+<td style="text-align:left">debriefs with ≥3 verification sections (ritual padding)</td>
+<td class="num" style="text-align:right"><strong>15</strong></td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">total <code>## <em>liveness</em></code> sections</td>
+<td class="num" style="text-align:right"><strong>10</strong></td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">debriefs with ≥3 liveness sections</td>
+<td class="num" style="text-align:right">2</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+</tbody></table>
+<p><strong>Read:</strong> Per-debrief, cond&#x27;s writeups are <strong>longer and denser</strong> (median 190 lines vs 143). But g55 has 4.8 M total chars vs cond&#x27;s 3.5 M because g55 produces many bloated debriefs full of repeated &quot;Verification refresh&quot; sections — the artifact of the 11-implementations-per-experiment churn.</p>
+<p>The 4 202-line debrief is <code>masked_market_imputation_flow_ranker</code> on g55 (266 implement assignments, 4 200 lines of mostly-repeated liveness checks). cond&#x27;s maximum debrief is 408 lines.</p>
+<hr/>
+<h2>10. Errors and tracebacks</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">DB rows with error field set</td>
+<td class="num" style="text-align:right"><strong>141</strong></td>
+<td class="num" style="text-align:right">49</td>
+</tr>
+<tr>
+<td style="text-align:left">tracebacks logged in worker logs</td>
+<td class="num" style="text-align:right"><strong>586</strong></td>
+<td class="num" style="text-align:right">344</td>
+</tr>
+</tbody></table>
+<p><strong>Top error signatures in DB (g55):</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">signature (g55)</th>
+<th class="num" style="text-align:right">g55 count</th>
+<th class="num" style="text-align:right">cond count</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">&quot;No canonical full-run metrics promoted. Latest local_cpu canonical attempt TIMEOUT…&quot;</td>
+<td class="num" style="text-align:right">24</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">&quot;job FAILED&quot;</td>
+<td class="num" style="text-align:right">5</td>
+<td class="num" style="text-align:right">3</td>
+</tr>
+<tr>
+<td style="text-align:left">(8 more variants of &quot;No canonical full-run metrics promoted… TIMEOUT…&quot;)</td>
+<td class="num" style="text-align:right">30</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+</tbody></table>
+<p>g55&#x27;s failure mode is <strong>canonical runs that hit the time-limit guard without ever promoting a metrics.json</strong>. cond doesn&#x27;t show this pattern at all — it gets to canonical artifacts cleanly.</p>
+<hr/>
+<h2>11. Cost per useful unit (per analyzed experiment)</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+<th class="num" style="text-align:right">g55/cond ratio</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">LLM requests per analyzed exp</td>
+<td class="num" style="text-align:right">640.1</td>
+<td class="num" style="text-align:right">153.2</td>
+<td class="num" style="text-align:right"><strong>4.2×</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">LLM seconds per analyzed exp</td>
+<td class="num" style="text-align:right">6 065</td>
+<td class="num" style="text-align:right">3 516</td>
+<td class="num" style="text-align:right"><strong>1.7×</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">tool calls per analyzed exp</td>
+<td class="num" style="text-align:right">891.0</td>
+<td class="num" style="text-align:right">211.4</td>
+<td class="num" style="text-align:right"><strong>4.2×</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">implement assignments per analyzed exp</td>
+<td class="num" style="text-align:right">15.96</td>
+<td class="num" style="text-align:right">1.39</td>
+<td class="num" style="text-align:right"><strong>11.5×</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">analyze assignments per analyzed exp</td>
+<td class="num" style="text-align:right">1.02</td>
+<td class="num" style="text-align:right">1.08</td>
+<td class="num" style="text-align:right">1.0×</td>
+</tr>
+</tbody></table>
+<p>Per useful output, g55 costs <strong>4× more in tool/request volume</strong> and <strong>1.7× more in raw LLM time</strong>, dominated by the implement-loop overhead.</p>
+<hr/>
+<h2>12. Strategist &amp; experiment diversity</h2>
+<p>The <code>propose_experiment</code> tool wasn&#x27;t observed (strategist uses a different internal path), so we measure via DB experiment names.</p>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">experiments in DB</td>
+<td class="num" style="text-align:right">377</td>
+<td class="num" style="text-align:right">360</td>
+</tr>
+<tr>
+<td style="text-align:left">Conductor annotations</td>
+<td class="num" style="text-align:right">158</td>
+<td class="num" style="text-align:right">193</td>
+</tr>
+</tbody></table>
+<p><strong>Mechanism keyword frequencies (substring matches on DB experiment names):</strong></p>
+<table>
+<thead><tr>
+<th style="text-align:left">keyword</th>
+<th class="num" style="text-align:right">g55 hits</th>
+<th class="num" style="text-align:right">cond hits</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">catboost</td>
+<td class="num" style="text-align:right">6</td>
+<td class="num" style="text-align:right"><strong>68</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">gru</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right"><strong>39</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">transformer</td>
+<td class="num" style="text-align:right">19</td>
+<td class="num" style="text-align:right">23</td>
+</tr>
+<tr>
+<td style="text-align:left">rank</td>
+<td class="num" style="text-align:right"><strong>61</strong></td>
+<td class="num" style="text-align:right">11</td>
+</tr>
+<tr>
+<td style="text-align:left">meta</td>
+<td class="num" style="text-align:right">6</td>
+<td class="num" style="text-align:right">19</td>
+</tr>
+<tr>
+<td style="text-align:left">hawkes</td>
+<td class="num" style="text-align:right">6</td>
+<td class="num" style="text-align:right">12</td>
+</tr>
+<tr>
+<td style="text-align:left">ica</td>
+<td class="num" style="text-align:right">14</td>
+<td class="num" style="text-align:right">13</td>
+</tr>
+<tr>
+<td style="text-align:left">graph</td>
+<td class="num" style="text-align:right">15</td>
+<td class="num" style="text-align:right">6</td>
+</tr>
+<tr>
+<td style="text-align:left">patchtst</td>
+<td class="num" style="text-align:right">2</td>
+<td class="num" style="text-align:right">10</td>
+</tr>
+<tr>
+<td style="text-align:left">quantile</td>
+<td class="num" style="text-align:right">4</td>
+<td class="num" style="text-align:right">9</td>
+</tr>
+<tr>
+<td style="text-align:left">hurdle</td>
+<td class="num" style="text-align:right">10</td>
+<td class="num" style="text-align:right">9</td>
+</tr>
+<tr>
+<td style="text-align:left">lgbm</td>
+<td class="num" style="text-align:right">16</td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">factor</td>
+<td class="num" style="text-align:right">9</td>
+<td class="num" style="text-align:right">4</td>
+</tr>
+</tbody></table>
+<p>g55 leans toward <strong>rank-and-flow</strong> experiment families (61 with &quot;rank&quot;, 16 with &quot;lgbm&quot; as the standalone token, 15 with &quot;graph&quot;). cond leans toward <strong>classical-ML + sequence-model</strong> combinations (68 catboost, 39 GRU). Total mechanism count is comparable; the mix is different.</p>
+<hr/>
+<h2>13. Memory tool usage</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">memory_search calls</td>
+<td class="num" style="text-align:right">7 405</td>
+<td class="num" style="text-align:right">3 482</td>
+</tr>
+<tr>
+<td style="text-align:left">memory_read calls</td>
+<td class="num" style="text-align:right">7 426</td>
+<td class="num" style="text-align:right">645</td>
+</tr>
+<tr>
+<td style="text-align:left">memory_store calls</td>
+<td class="num" style="text-align:right">4 329</td>
+<td class="num" style="text-align:right">1 198</td>
+</tr>
+<tr>
+<td style="text-align:left">memory_search + memory_read as % of all tool calls</td>
+<td class="num" style="text-align:right">6.3%</td>
+<td class="num" style="text-align:right">7.7%</td>
+</tr>
+</tbody></table>
+<p>g55 reads the memory store much more aggressively (7 426 reads vs cond&#x27;s 645). Heavier memory use does not translate into fewer mistakes — g55 both writes more memory entries and re-reads them more, but its kanban discipline is still worse than cond&#x27;s.</p>
+<hr/>
+<h2>14. Agent free-text emission (streaming events)</h2>
+<p>The OpenAI Responses API and Bedrock stream tokens differently, so this is a chunk-count not a token-count.</p>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>agent_text</code> events (total streaming chunks)</td>
+<td class="num" style="text-align:right">53 168</td>
+<td class="num" style="text-align:right"><strong>513 668</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">events in worker_implement</td>
+<td class="num" style="text-align:right">52 852</td>
+<td class="num" style="text-align:right">296 309</td>
+</tr>
+<tr>
+<td style="text-align:left">events in strategist</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">79 052</td>
+</tr>
+<tr>
+<td style="text-align:left">events in conductor</td>
+<td class="num" style="text-align:right">316</td>
+<td class="num" style="text-align:right">61 709</td>
+</tr>
+<tr>
+<td style="text-align:left">events in worker_analyze</td>
+<td class="num" style="text-align:right">0</td>
+<td class="num" style="text-align:right">35 708</td>
+</tr>
+</tbody></table>
+<p>Note: g55 emits FEWER but LARGER chunks (typically one chunk per turn); cond&#x27;s Bedrock streams in many small <code>delta</code> chunks. This is a streaming-API artifact, not a direct measure of how much each LLM &quot;talked&quot;.</p>
+<hr/>
+<h2>15. Conductor activity</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55 (GPT-5.5)</th>
+<th class="num" style="text-align:right">cond (Claude 4.7)</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">annotations.json entries</td>
+<td class="num" style="text-align:right">158</td>
+<td class="num" style="text-align:right">193</td>
+</tr>
+<tr>
+<td style="text-align:left">total Conductor decisions logged</td>
+<td class="num" style="text-align:right"><strong>1 651</strong></td>
+<td class="num" style="text-align:right">953</td>
+</tr>
+<tr>
+<td style="text-align:left">annotate</td>
+<td class="num" style="text-align:right">267</td>
+<td class="num" style="text-align:right">255</td>
+</tr>
+<tr>
+<td style="text-align:left">retire_directive</td>
+<td class="num" style="text-align:right">358</td>
+<td class="num" style="text-align:right">129</td>
+</tr>
+<tr>
+<td style="text-align:left">directive</td>
+<td class="num" style="text-align:right">368</td>
+<td class="num" style="text-align:right">109</td>
+</tr>
+<tr>
+<td style="text-align:left">note_to_user</td>
+<td class="num" style="text-align:right">254</td>
+<td class="num" style="text-align:right">111</td>
+</tr>
+<tr>
+<td style="text-align:left">park</td>
+<td class="num" style="text-align:right">93</td>
+<td class="num" style="text-align:right">131</td>
+</tr>
+<tr>
+<td style="text-align:left">set_priority</td>
+<td class="num" style="text-align:right">72</td>
+<td class="num" style="text-align:right">147</td>
+</tr>
+<tr>
+<td style="text-align:left">retrospective</td>
+<td class="num" style="text-align:right"><strong>149</strong></td>
+<td class="num" style="text-align:right">1</td>
+</tr>
+<tr>
+<td style="text-align:left">kill</td>
+<td class="num" style="text-align:right">42</td>
+<td class="num" style="text-align:right">32</td>
+</tr>
+<tr>
+<td style="text-align:left">unpark</td>
+<td class="num" style="text-align:right">15</td>
+<td class="num" style="text-align:right">33</td>
+</tr>
+<tr>
+<td style="text-align:left">throttle</td>
+<td class="num" style="text-align:right"><strong>27</strong></td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+<tr>
+<td style="text-align:left">ack_user_instruction</td>
+<td class="num" style="text-align:right">4</td>
+<td class="num" style="text-align:right">5</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>phase_rewind</strong></td>
+<td class="num" style="text-align:right"><strong>2</strong></td>
+<td class="num" style="text-align:right">0</td>
+</tr>
+</tbody></table>
+<p><strong>Read:</strong> g55&#x27;s Conductor had to be far more active. It issued <strong>2 phase rewinds</strong>, <strong>27 throttles</strong>, and <strong>149 retrospectives</strong> — none of which cond&#x27;s Conductor needed. cond&#x27;s Conductor spent more time on lightweight annotation and priority-setting (255 + 147 = 402 vs 267 + 72 = 339), and on parking/unparking (131 + 33 vs 93 + 15) — a steadier hand on a steadier pipeline.</p>
+<hr/>
+<h2>16. Result quality (proxy-Sharpe leaderboard)</h2>
+<table>
+<thead><tr>
+<th style="text-align:left">metric</th>
+<th class="num" style="text-align:right">g55</th>
+<th class="num" style="text-align:right">cond</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">experiments with stored sharpe metric</td>
+<td class="num" style="text-align:right">163</td>
+<td class="num" style="text-align:right">243</td>
+</tr>
+<tr>
+<td style="text-align:left">min sharpe</td>
+<td class="num" style="text-align:right">-1.893</td>
+<td class="num" style="text-align:right"><strong>-2.232</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">p10 sharpe</td>
+<td class="num" style="text-align:right">0.089</td>
+<td class="num" style="text-align:right"><strong>-0.740</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">median sharpe</td>
+<td class="num" style="text-align:right"><strong>2.437</strong></td>
+<td class="num" style="text-align:right">0.926</td>
+</tr>
+<tr>
+<td style="text-align:left">mean sharpe</td>
+<td class="num" style="text-align:right">2.952</td>
+<td class="num" style="text-align:right">1.082</td>
+</tr>
+<tr>
+<td style="text-align:left">p90 sharpe</td>
+<td class="num" style="text-align:right"><strong>6.543</strong></td>
+<td class="num" style="text-align:right">3.140</td>
+</tr>
+<tr>
+<td style="text-align:left">max sharpe</td>
+<td class="num" style="text-align:right"><strong>14.290</strong></td>
+<td class="num" style="text-align:right">6.139</td>
+</tr>
+</tbody></table>
+<p><strong>Top 8 by sharpe per workspace:</strong></p>
+<table>
+<thead><tr>
+<th class="num" style="text-align:right">g55 sharpe</th>
+<th style="text-align:left">g55 exp</th>
+<th class="num" style="text-align:right">cond sharpe</th>
+<th style="text-align:left">cond exp</th>
+</tr></thead>
+<tbody>
+<tr>
+<td class="num" style="text-align:right">14.29</td>
+<td style="text-align:left">compact_tsmixer_residual_frontier</td>
+<td class="num" style="text-align:right">6.14</td>
+<td style="text-align:left">champion_327_2024_walkforward_4fold_robust</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">12.38</td>
+<td style="text-align:left">temporal_graph_symbol_flow_reconciler</td>
+<td class="num" style="text-align:right">6.11</td>
+<td style="text-align:left">finale_ewma10_gate_ledger_top15_full2025_b</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">10.63</td>
+<td style="text-align:left">temporal_graph_null_repair_audit</td>
+<td class="num" style="text-align:right">5.60</td>
+<td style="text-align:left">ewma10_event_forensics_dec4_top_k_drop_shap</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">10.62</td>
+<td style="text-align:left">classical_hawkes_client_sector</td>
+<td class="num" style="text-align:right">5.22</td>
+<td style="text-align:left">tight_alpha_confirmed_weighted_stacker_294</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">10.06</td>
+<td style="text-align:left">frontier_source_safe_audit_export</td>
+<td class="num" style="text-align:right">5.22</td>
+<td style="text-align:left">ewma10_as_stacker_leg_ridge_cv_180_206_327</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">9.90</td>
+<td style="text-align:left">all_symbol_sparse_active_universe_ranker</td>
+<td class="num" style="text-align:right">4.98</td>
+<td style="text-align:left">four_leg_ew_tight_alpha_rerun_327_105_85</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">9.62</td>
+<td style="text-align:left">s5_state_space_flow_panel</td>
+<td class="num" style="text-align:right">4.73</td>
+<td style="text-align:left">sr_weighted_meta_stacker_symbol_top_60m</td>
+</tr>
+<tr>
+<td class="num" style="text-align:right">9.57</td>
+<td style="text-align:left">itransformer_flow_panel</td>
+<td class="num" style="text-align:right">4.73</td>
+<td style="text-align:left">extended_oos_rescore_84_85_expanding_window</td>
+</tr>
+</tbody></table>
+<p><strong>Read carefully:</strong> g55&#x27;s max Sharpe is 14.29, cond&#x27;s is 6.14. Without a quality audit it is <strong>not safe to conclude g55 found better alpha</strong> — on this proxy metric, very-high Sharpe usually reflects label/leakage residue or capping artifacts. In fact the milestone reports explicitly flag &quot;raw flow-spread sharpe is not desk PnL&quot; for the top g55 numbers. The median and the lower tail are arguably the more honest comparison: cond&#x27;s median 0.93 + min -2.23 with a tighter spread suggests <strong>more conservative, more believable diagnostics</strong>; g55&#x27;s median 2.44 + mean 2.95 suggests systematic Sharpe inflation across experiments.</p>
+<hr/>
+<h1>What each LLM is good at / bad at</h1>
+<h2>GPT-5.5 (g55) — strengths</h2>
+<ul>
+<li>Faster per-API-roundtrip latency (median 5.0s vs 10.4s) — when the</li>
+</ul>
+<p>  conversation is short it gets through it quickly.</p>
+<ul>
+<li>Larger code output per experiment (~2× LOC) — more aggressive</li>
+</ul>
+<p>  scaffolding, more ablation branches in strategy code.</p>
+<ul>
+<li>More extensive use of persistent memory (search + read 2× more often).</li>
+<li>Higher-Sharpe &quot;frontier&quot; results on the proxy metric (largely an</li>
+</ul>
+<p>  artifact, see caveat above).</p>
+<h2>GPT-5.5 (g55) — weaknesses</h2>
+<ul>
+<li><strong>Kanban indiscipline.</strong> 30.5% of status-attempts blocked, 24% of</li>
+</ul>
+<p>  results refused as smoke, 44% of update_experiment calls are   idempotent no-ops. Reaches for terminal states (<code>finished</code>/<code>running</code>)   from <code>implemented</code>, skipping the <code>→ checked</code> step.</p>
+<ul>
+<li><strong>Reassignment loops.</strong> Mean 11.18 implement assignments per</li>
+</ul>
+<p>  experiment, max 420 on a single row. The implement worker repeatedly   re-reads existing code, re-runs smoke, and exits without changing state.</p>
+<ul>
+<li><strong>Out-of-band canonical launches.</strong> 28 experiments where <code>nohup … run_experiment.py</code></li>
+</ul>
+<p>  was launched directly, bypassing the dispatcher. Each one becomes a   kanban zombie.</p>
+<ul>
+<li><strong>Smoke laundering.</strong> 773 attempts to ship a smoke-flagged payload as</li>
+</ul>
+<p>  canonical results — caught by the guard, but it tells you the LLM&#x27;s   default is &quot;any metrics are leaderboard metrics&quot;.</p>
+<ul>
+<li><strong>Conductor needs to clean up.</strong> g55&#x27;s Conductor issued 2 phase rewinds</li>
+</ul>
+<p>  and 27 throttles to keep the pipeline upright; cond&#x27;s needed neither.</p>
+<ul>
+<li><strong>Bloated debriefs.</strong> 275 &quot;Verification refresh&quot; sections across all</li>
+</ul>
+<p>  debriefs, vs 10 on cond. Some debriefs are 4 200 lines of mostly   duplicated content.</p>
+<ul>
+<li><strong>Higher error rate.</strong> 141 DB rows with errors (cond 49); 24 of them</li>
+</ul>
+<p>  are <code>local_cpu canonical attempt TIMEOUT</code>.</p>
+<h2>Claude Opus 4.7 (cond) — strengths</h2>
+<ul>
+<li><strong>Clean kanban.</strong> 93% of update_experiment calls actually advance state.</li>
+</ul>
+<p>  Almost never invents a status transition.</p>
+<ul>
+<li><strong>Linear progression.</strong> ~1 implement assignment per experiment (mean</li>
+</ul>
+<p>  1.31, max 14) — the implement worker does its job and hands off.</p>
+<ul>
+<li><strong>No smoke laundering at all.</strong> 0 refused payloads.</li>
+<li><strong>Cheaper per useful unit.</strong> 4× fewer tool calls, 4× fewer requests,</li>
+</ul>
+<p>  1.7× less LLM time per analyzed experiment.</p>
+<ul>
+<li><strong>Lower-volume Conductor.</strong> Fewer overall interventions but they&#x27;re</li>
+</ul>
+<p>  targeted (parking, priority, annotation) rather than firefighting   (throttle, rewind, retrospective).</p>
+<ul>
+<li><strong>Heavier shell use</strong> — composes longer bash pipelines (50% of all</li>
+</ul>
+<p>  tool calls are shell_exec) and re-reads files less; behavior aligns   with the prompt&#x27;s &quot;explore the framework, then go&quot; rhythm.</p>
+<ul>
+<li><strong>Proactive in Phase 1.</strong> Built the entire <code>backtest/</code> framework</li>
+</ul>
+<p>  during exploration (88 framework-creating tool calls in   conversation.jsonl), skipping the dedicated Phase 2 builder step   entirely. Phase 2 critic passed on iteration #1. g55 left framework   construction to Phase 2 and needed 6 builder→critic iterations to   reach PASS.</p>
+<h2>Claude Opus 4.7 (cond) — weaknesses</h2>
+<ul>
+<li><strong>Slower per request.</strong> Median 10.4s vs g55&#x27;s 5.0s; cond&#x27;s max single</li>
+</ul>
+<p>  request is shorter (953s vs 2714s) but typical responses take twice   as long.</p>
+<ul>
+<li><strong>Less mechanism diversity in some families.</strong> Heavy on</li>
+</ul>
+<p>  catboost / GRU / EWMA-stacker recipes; lighter on graph-based and   novel-architecture experiments.</p>
+<ul>
+<li><strong>Sharpe values cluster lower</strong> — could be a true conservatism or</li>
+</ul>
+<p>  could be missing the &quot;find high-Sharpe (maybe leaky)&quot; risk taking that   exposes label issues. Without an external audit this is ambiguous.</p>
+<ul>
+<li><strong>Larger pending backlog.</strong> 94 experiments at <code>to_implement</code> waiting,</li>
+</ul>
+<p>  because the implement workers are slower per-experiment even when they   go through cleanly.</p>
+<ul>
+<li><strong>Strategist still verbose.</strong> strategist LLM time 33h, similar to g55</li>
+</ul>
+<p>  proportionally.</p>
+<ul>
+<li><strong>Crosses role boundaries.</strong> Doing Phase 2&#x27;s framework-build during</li>
+</ul>
+<p>  Phase 1 exploration is helpful here but is a discipline-violation in   spirit — Phase 1&#x27;s prompt says explore, not build. If you depend on   the kanban boundary for sandboxing/review, this is something to watch.</p>
+<hr/>
+<h1>Recommendations</h1>
+<p>These are derived from the data above, not anecdote.</p>
+<h3>1. Default to Claude Opus 4.7 for autonomous-research pipelines</h3>
+<p>On every measured efficiency axis cond wins by 2–10×. Same configuration, same prompts, same dataset. The throughput-per-LLM-hour advantage compounds across the entire run.</p>
+<h3>2. Tighten the implement-worker prompt against the GPT-5.5 failure modes</h3>
+<p>Even if you keep using GPT-5.5 for some roles, the prompt should <strong>explicitly forbid</strong> the patterns the data shows it falling into:</p>
+<ul>
+<li>No out-of-band <code>python run_experiment.py</code> / <code>nohup</code> launches</li>
+<li>Always go <code>implemented → checked</code>; never reach for <code>finished</code> / <code>running</code> /</li>
+</ul>
+<p>  <code>done</code> / <code>analyzed</code> directly</p>
+<ul>
+<li>Never store smoke-flagged metrics; never invent ad-hoc <code>run_scope</code> strings</li>
+<li>When the canonical run is blocked by a missing precondition, set</li>
+</ul>
+<p>  <code>error=&quot;blocked: &lt;reason&gt;&quot;</code> (the new dispatcher honors this prefix to   stop re-assigning); never write a <code>results_json</code> with   <code>canonical_full_run: false</code></p>
+<p>(All four rules now live in <code>src/alpha_lab/prompts.py::_IMPLEMENT_LIFECYCLE_GUARDRAIL</code> and are appended generically by <code>build_step_prompt</code>.)</p>
+<h3>3. Land the dispatcher auto-promote (already done)</h3>
+<p><code>set_results</code> now auto-promotes <code>implemented</code> / <code>checked</code> → <code>finished</code> when a canonical payload lands, regardless of which LLM is driving. This breaks the worst observed pattern on g55 (25 zombie rows) at the infrastructure level so the next run will not strand them no matter how the LLM behaves.</p>
+<h3>4. Run shorter pretests on new LLMs before committing budget</h3>
+<p>A 30-minute smoke pipeline using each candidate LLM would surface the g55-style 30.5%-blocked / 24.2%-refused signatures within a few hundred update_experiment calls — long before you commit a 100-hour budget. Status-update outcome ratios are an excellent early proxy for whether an LLM understands the kanban contract.</p>
+<h3>5. Make the strategist explicitly trade off mechanism diversity vs depth</h3>
+<p>g55 hit far more &quot;novel&quot; mechanisms (graph-based, stake-based, ranking variants) but burned its budget retrying broken implementations of them. cond stayed close to a proven core (catboost / GRU / EWMA ensemble) and finished what it started. A per-strategist parameter for breadth-vs-depth (currently implicit in the prompt) would let operators choose.</p>
+<h3>6. Cap LLM thrashing on a single experiment</h3>
+<p>Even with the auto-promote and the prompt fixes, a hard <code>max_implement_assignments_per_experiment</code> cap in the dispatcher (e.g. 5) would have saved hundreds of hours on g55. After the cap, auto-<code>cancelled</code> with a clear message. cond would essentially never hit this cap (it stays at 1–2). g55 would.</p>
+<h3>7. Use Conductor interventions as a health signal</h3>
+<p>g55&#x27;s Conductor issued 27 throttles + 2 phase rewinds + 149 retrospectives. If those counts cross a threshold the operator should be alerted that the pipeline is in firefighting mode and consider intervening. cond&#x27;s Conductor needed almost none of these — a healthy run looks like steady parking + priority adjustment.</p>
+<h3>8. Audit &quot;high Sharpe&quot; outliers on g55-style runs</h3>
+<p>The 14.29 / 12.38 / 10.63 Sharpes on g55&#x27;s top experiments are flagged by the milestone reports themselves as proxy-not-PnL. Build an automatic post-hoc audit that re-evaluates the top-N by a stricter (return-bridge) metric before the reporter promotes them — the <code>cap_aware_realized_return_bridge_audit</code> experiment in g55 already shows this pattern (proxy 4.65 → realized 0.105). Without that audit, &quot;frontier&quot; Sharpe values on the leaderboard mislead.</p>
+<h3>9. Cache and time pytest invocations on NFS-mounted venvs</h3>
+<p>Not LLM-specific, but observed during this study: the pytest suite is ~7 s of actual test time but takes ~25 s+ per cold invocation. For a dev loop, <code>PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/&lt;file&gt;.py</code> cuts that to roughly the bare-Python import cost.</p>
+<h3>10. Build per-LLM dashboards as a first-class deliverable of every run</h3>
+<p>The numbers above are extractable in a few minutes from a structured cache of the logs. Wiring a small standing dashboard (kanban-block %, smoke-refusal %, implement-vs-analyze ratio, LLM-time-per-analyzed) into the dispatcher&#x27;s milestone output would let operators see at a glance whether they are in &quot;cond-shaped&quot; or &quot;g55-shaped&quot; territory and act early.</p>
+<hr/>
+<h1>Appendix — how to reproduce these numbers</h1>
+<pre><code># one-shot scan of all logs (writes ~110 MB of cache)
+python3 /tmp/llm_study/build_cache.py
+# main report (reads cache, prints to stdout)
+python3 /tmp/llm_study/analyze.py
+python3 /tmp/llm_study/analyze_extra.py
+python3 /tmp/llm_study/analyze_fix.py</code></pre>
+<p>Source data: <code>workspace_etfflow_g55/</code> and <code>workspace_etfflow_cond/</code>. Configs: <code>data/etfflows_config_conductor_g55.json</code> and <code>data/etfflows_config_conductor.json</code>.</p>
+</div>
+</body>
+</html>

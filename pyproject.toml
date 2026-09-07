@@ -1,0 +1,47 @@
+[project]
+name = "alpha-lab"
+version = "0.1.0"
+description = "Alpha Lab — Autonomous Research Agent"
+requires-python = ">=3.11"
+dependencies = [
+    # LLM providers
+    "openai>=1.82.0",
+    "boto3>=1.42.91",
+    "httpx>=0.28.0",
+    # Web server
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "watchfiles>=1.0.0",
+    # CLI
+    "rich>=14.0.0",
+    "prompt-toolkit>=3.0.50",
+    # Utilities
+    "tiktoken>=0.9.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+alpha-lab = "alpha_lab.cli:main"
+alpha-lab-run = "alpha_lab.run:run_main"
+alpha-lab-serve = "alpha_lab.server:serve_main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alpha_lab"]
+
+[project.optional-dependencies]
+mlflow = [
+    # MLflow integration (--mlflow flag on alpha-lab-run). All paths guarded
+    # by is_active(); safe to omit when --mlflow is not used.
+    "mlflow>=2.20.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.2",
+]

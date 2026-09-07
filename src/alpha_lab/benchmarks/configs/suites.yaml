@@ -1,0 +1,83 @@
+_: &model_default
+  model: gpt-5.4
+  provider: openai
+  reasoning_effort: medium
+
+_: &model_smoketest
+  model: gpt-5-mini
+  provider: openai
+  reasoning_effort: high
+
+_: &pipeline_default
+  phase3:
+    worker_count: 4
+    max_experiments: 32
+    report_interval: 4
+    time_limit_seconds: 1800
+    strategist_interval: 180
+    cpu_time_limit_seconds: 300
+
+_: &pipeline_smoketest
+  phase3:
+    worker_count: 2
+    max_experiments: 8
+    report_interval: 4
+    time_limit_seconds: 600
+    strategist_interval: 180
+    cpu_time_limit_seconds: 180
+
+
+suites:
+  scm_classification:
+    smoke_test:
+      generator_kwargs:
+        seed: 42
+        count: 4
+        min_features: 2
+        max_features: 4
+        max_classes: 2
+        max_seq_len: 256
+      config_overrides:
+        <<: *model_smoketest
+        pipeline:
+          <<: *pipeline_smoketest
+  
+    easy:
+      generator_kwargs:
+        seed: 1000
+        count: 32
+        min_features: 2
+        max_features: 8
+        max_classes: 3
+        max_seq_len: 2048
+      config_overrides:
+        <<: *model_default
+        pipeline:
+          <<: *pipeline_default
+
+    medium:
+      generator_kwargs:
+        seed: 2000
+        count: 32
+        min_features: 4
+        max_features: 16
+        max_classes: 4
+        max_seq_len: 1024
+      config_overrides:
+        <<: *model_default
+        pipeline:
+          <<: *pipeline_default
+
+    hard:
+      generator_kwargs:
+        seed: 3000
+        count: 32
+        min_features: 8
+        max_features: 32
+        max_classes: 8
+        max_seq_len: 512
+      config_overrides:
+        <<: *model_default
+        reasoning_effort: high
+        pipeline:
+          <<: *pipeline_default

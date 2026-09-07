@@ -1,1 +1,0 @@
-"""AriadneMem MCP Server"""
