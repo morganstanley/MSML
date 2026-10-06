@@ -1,0 +1,756 @@
+diff --git a/gigatoken/_tokenizer.py b/gigatoken/_tokenizer.py
+index 3037fb8..97cb5b2 100644
+--- a/gigatoken/_tokenizer.py
++++ b/gigatoken/_tokenizer.py
+@@ -202,6 +202,13 @@ class Tokenizer:
+     def encode(self, input: str | bytes) -> npt.NDArray[np.uint32]:
+         return self._backend.encode(input)
+ 
++    def encode_profiled(
++        self,
++        input: str | bytes,
++    ) -> tuple[npt.NDArray[np.uint32], dict[str, int | float | None]]:
++        """Single-document ``encode`` with opt-in native TTFT profiling."""
++        return self._backend.encode_profiled(input)
++
+     def encode_batch(
+         self,
+         inputs: list[str] | list[bytes] | BytesSource | ak.Array,
+@@ -283,6 +290,17 @@ class Tokenizer:
+         and encode_batch here for `parallel`."""
+         return self._backend.encode_files(source, parallel=resolve_parallel(parallel))
+ 
++    def encode_files_profiled(
++        self,
++        source: FileSource | str | Path | PathLike[str] | list[str | Path | PathLike[str]],
++        *,
++        parallel: bool = False,
++    ) -> tuple[ak.Array, dict[str, int | float | None]]:
++        """Serial ``encode_files`` with opt-in native TTFT profiling."""
++        if parallel:
++            raise ValueError("encode_files_profiled only supports parallel=False")
++        return self._backend.encode_files_profiled(source, parallel=False)
++
+     def decode(self, tokens: list[int] | npt.NDArray[np.uint32] | ak.Array) -> bytes:
+         if type(tokens).__module__.partition(".")[0] == "awkward":
+             # An awkward row converts to a numpy view (zero-copy when
+diff --git a/gigatoken/gigatoken_rs/__init__.pyi b/gigatoken/gigatoken_rs/__init__.pyi
+index 8545647..2d3dc36 100644
+--- a/gigatoken/gigatoken_rs/__init__.pyi
++++ b/gigatoken/gigatoken_rs/__init__.pyi
+@@ -94,6 +94,10 @@ class PadTruncate:
+ 
+ class BPETokenizer:
+     def encode(self, input: str | bytes) -> npt.NDArray[np.uint32]: ...
++    def encode_profiled(
++        self,
++        input: str | bytes,
++    ) -> tuple[npt.NDArray[np.uint32], dict[str, int | float | None]]: ...
+     def encode_batch(
+         self,
+         inputs: list[str] | list[bytes] | BytesSource | ak.Array,
+@@ -136,6 +140,12 @@ class BPETokenizer:
+         *,
+         parallel: bool = True,
+     ) -> ak.Array: ...
++    def encode_files_profiled(
++        self,
++        source: FileSource | str | Path | PathLike[str] | list[str | Path | PathLike[str]],
++        *,
++        parallel: bool = False,
++    ) -> tuple[ak.Array, dict[str, int | float | None]]: ...
+     def decode(self, tokens: list[int] | npt.NDArray[np.integer] | ak.Array) -> bytes:
+         """Integer numpy arrays are borrowed (uint32) or converted in one
+         pass (other dtypes); sequences are extracted per element."""
+diff --git a/src/batch.rs b/src/batch.rs
+index f077239..de58299 100644
+--- a/src/batch.rs
++++ b/src/batch.rs
+@@ -14,6 +14,7 @@ use std::ops::Range;
+ use std::cell::UnsafeCell;
+ use std::sync::atomic::{AtomicUsize, Ordering};
+ use std::sync::{Mutex, OnceLock, TryLockError};
++use std::time::{Duration, Instant};
+ 
+ /// Parallel chunks must hold at least this many bytes: a chunk this size
+ /// encodes for tens of milliseconds, so worker acquisition and rayon
+@@ -40,6 +41,24 @@ pub(crate) fn encode_into(tokenizer: &mut Tokenizer, doc: &[u8], ids: &mut Vec<u
+     lens.push((ids.len() - before) as i64);
+ }
+ 
++fn encode_into_profiled(
++    tokenizer: &mut Tokenizer,
++    doc: &[u8],
++    ids: &mut Vec<u32>,
++    lens: &mut Vec<i64>,
++    recorded: &mut bool,
++    mark_first_ready: &mut impl FnMut(),
++) {
++    let before = ids.len();
++    if *recorded {
++        tokenizer.encode_with_added_tokens_flat(doc, ids);
++    } else {
++        *recorded =
++            tokenizer.encode_with_added_tokens_flat_profiled(doc, ids, mark_first_ready);
++    }
++    lens.push((ids.len() - before) as i64);
++}
++
+ /// SentencePiece analog of `encode_into`, using `encoder`'s pretoken cache.
+ pub(crate) fn sp_encode_into(
+     encoder: &mut bpe::sentencepiece::Encoder<'_>,
+@@ -984,6 +1003,42 @@ pub(crate) fn encode_files_docs_serial(
+     })
+ }
+ 
++/// Timing includes time from encoding function invocation to first token
++/// output.
++pub(crate) fn encode_files_docs_serial_profiled(
++    workers: &WorkerPool,
++    proto: &Tokenizer,
++    files: &[&[u8]],
++    format: &DocFormat,
++    started: Instant,
++) -> (Vec<u32>, Vec<i64>, Option<Duration>, Duration) {
++    let total: usize = files.iter().map(|f| f.len()).sum();
++    workers.with_serial_worker(proto, total, |tok| {
++        let mut ids: Vec<u32> = Vec::with_capacity(total / 4 + 16);
++        madvise_hugepage(ids.as_mut_ptr() as *mut u8, ids.capacity() * 4);
++        let mut lens = Vec::new();
++        let mut ttft = None;
++        let mut recorded = false;
++        let mut mark_first_ready = || {
++            ttft = Some(started.elapsed());
++        };
++        for &bytes in files {
++            for_each_doc(bytes, format, |doc| {
++                encode_into_profiled(
++                    tok,
++                    doc,
++                    &mut ids,
++                    &mut lens,
++                    &mut recorded,
++                    &mut mark_first_ready,
++                )
++            });
++        }
++        let elapsed = started.elapsed();
++        (ids, lens, ttft, elapsed)
++    })
++}
++
+ /// encode_files core for the SentencePiece backend. With no separator each
+ /// file is one document (small files are grouped, huge ones split at
+ /// scanner-safe boundaries); otherwise each file is cut into byte regions at
+diff --git a/src/bindings/sources.rs b/src/bindings/sources.rs
+index 31de5da..cbe0cb0 100644
+--- a/src/bindings/sources.rs
++++ b/src/bindings/sources.rs
+@@ -7,6 +7,7 @@ use crate::input::file_source::{DocFormat, LoadedFile, detect_default_format, lo
+ use pyo3::prelude::*;
+ use pyo3::pybacked::PyBackedBytes;
+ use std::path::PathBuf;
++use std::time::{Duration, Instant};
+ 
+ /// Base class for file sources. Not directly constructible from Python —
+ /// use `TextFileSource` or `JsonlFileSource`, which pin down the document
+@@ -227,6 +228,45 @@ pub(crate) fn encode_files_ragged<'py>(
+     super::bridge::ragged_to_python(py, flat, counts)
+ }
+ 
++/// Timing includes time from encoding function invocation to first token
++/// output.
++pub(crate) fn encode_files_ragged_profiled<'py>(
++    py: Python<'py>,
++    source: &Bound<'py, PyAny>,
++    started: Instant,
++    encode: impl FnOnce(&[&[u8]], &DocFormat, Instant) -> (
++        Vec<u32>,
++        Vec<i64>,
++        Option<Duration>,
++        Duration,
++    ) + Send,
++) -> PyResult<(Bound<'py, PyAny>, usize, Option<Duration>, Duration)> {
++    let (paths, format) = resolve_files_source(source)?;
++    let (flat, counts, ttft, elapsed) = py.detach(|| -> PyResult<_> {
++        let (flat, counts, ttft, elapsed) = if let DocFormat::Parquet { column } = &format {
++            let docs = load_parquet_docs(&paths, column, false)?;
++            let bytes: Vec<&[u8]> = docs.iter().map(|d| d.as_slice()).collect();
++            encode(
++                &bytes,
++                &DocFormat::Text { separator: None },
++                started,
++            )
++        } else {
++            let files = load_files(&paths, false)?;
++            let bytes: Vec<&[u8]> = files.iter().map(|f| f.as_bytes()).collect();
++            encode(&bytes, &format, started)
++        };
++        Ok((flat, counts, ttft, elapsed))
++    })?;
++    let total_tokens = flat.len();
++    Ok((
++        super::bridge::ragged_to_python(py, flat, counts)?,
++        total_tokens,
++        ttft,
++        elapsed,
++    ))
++}
++
+ /// Load `column` of every parquet file as one owned document per row, files
+ /// in argument order, rows in row order. Parallel across files and row
+ /// groups with rayon, or fully on the calling thread when `parallel` is
+diff --git a/src/bpe/tiktoken.rs b/src/bpe/tiktoken.rs
+index 65d34c5..a4b3c48 100644
+--- a/src/bpe/tiktoken.rs
++++ b/src/bpe/tiktoken.rs
+@@ -1005,6 +1005,43 @@ impl Tokenizer {
+         });
+     }
+ 
++    /// Profiled counterpart of [`Self::encode_with_added_tokens_flat`].
++    /// `mark_first_ready()` runs once, when the first stable token ID is ready
++    /// to emit.
++    /// For cache misses that is after BPE finishes but before cache insertion
++    /// or bulk output copying. Returns whether this input emitted a token.
++    pub(crate) fn encode_with_added_tokens_flat_profiled(
++        &mut self,
++        bytes: &[u8],
++        out: &mut Vec<u32>,
++        mark_first_ready: &mut impl FnMut(),
++    ) -> bool {
++        let pt = self.pretokenizer_type;
++        let mut recorded = false;
++        self.for_each_piece(bytes, |this, piece| match piece {
++            Piece::Segment(segment, _) => {
++                if recorded {
++                    this.memoized_encode_flat(pt.pretokenize(segment), out);
++                } else {
++                    recorded =
++                        this.memoized_encode_flat_profiled(
++                            pt.pretokenize(segment),
++                            out,
++                            mark_first_ready,
++                        );
++                }
++            }
++            Piece::Added(id) => {
++                out.push(id.0);
++                if !recorded {
++                    mark_first_ready();
++                    recorded = true;
++                }
++            }
++        });
++        recorded
++    }
++
+     /// For each pretoken in the input iterator, looks up the string in the
+     /// cache, and if not found, encodes it and inserts it into the cache.
+     /// Calls `f` with the encoded token slice for each pretoken.
+@@ -1080,6 +1117,36 @@ impl Tokenizer {
+         }
+     }
+ 
++    fn memoized_encode_flat_profiled<'i>(
++        &mut self,
++        mut pretokens: impl PretokenSpans<'i>,
++        out: &mut Vec<u32>,
++        mark_first_ready: &mut impl FnMut(),
++    ) -> bool {
++        let mut batch = SpanBatch::new();
++        let cache = &self.pretoken_cache;
++        let n = pretokens.fill_spans_keyed(&mut batch, &|h| cache.prefetch_l2(h));
++        if n == 0 {
++            return false;
++        }
++        self.probe_emit_chunk_profiled(&batch, n, out, mark_first_ready);
++        if n < PRETOKEN_CHUNK {
++            return true;
++        }
++        loop {
++            let cache = &self.pretoken_cache;
++            let n = pretokens.fill_spans_keyed(&mut batch, &|h| cache.prefetch_l2(h));
++            if n == 0 {
++                break;
++            }
++            self.probe_emit_chunk(&batch, n, out, |_, _| {});
++            if n < PRETOKEN_CHUNK {
++                break;
++            }
++        }
++        true
++    }
++
+     /// Probe-and-emit for one chunk: branchless flat emit with a single
+     /// rare data-dependent branch per pretoken. Every iteration stores the
+     /// probed value's four token lanes unconditionally at the write cursor
+@@ -1102,6 +1169,29 @@ impl Tokenizer {
+         batch: &SpanBatch<'_>,
+         n: usize,
+         out: &mut Vec<u32>,
++        record: impl FnMut(usize, usize),
++    ) {
++        let mut first_ready = || {};
++        self.probe_emit_chunk_inner::<false>(batch, n, out, &mut first_ready, record);
++    }
++
++    fn probe_emit_chunk_profiled(
++        &mut self,
++        batch: &SpanBatch<'_>,
++        n: usize,
++        out: &mut Vec<u32>,
++        first_ready: &mut impl FnMut(),
++    ) {
++        self.probe_emit_chunk_inner::<true>(batch, n, out, first_ready, |_, _| {});
++    }
++
++    #[inline(always)]
++    fn probe_emit_chunk_inner<const PROFILE_FIRST: bool>(
++        &mut self,
++        batch: &SpanBatch<'_>,
++        n: usize,
++        out: &mut Vec<u32>,
++        first_ready: &mut impl FnMut(),
+         mut record: impl FnMut(usize, usize),
+     ) {
+         // One check up front so `i`- and `pf`-indexing of the batch arrays
+@@ -1127,6 +1217,7 @@ impl Tokenizer {
+         for i in 0..D.min(n) {
+             table.prefetch(batch.entries[i].meta);
+         }
++        let mut first_recorded = false;
+         for i in 0..n {
+             // Unclamped prefetch distance: the batch carries D slack
+             // entries past a full chunk, so `i + D` always indexes into
+@@ -1145,6 +1236,11 @@ impl Tokenizer {
+             // slots); on !found the lanes below are another entry's, dead
+             // because the cursor does not advance.
+             let fast = found & (val & VAL_SPILL == 0) & (key != 0);
++            let len = if fast { (val & 0x7F) as usize } else { 0 };
++            if PROFILE_FIRST && !first_recorded && len != 0 {
++                first_ready();
++                first_recorded = true;
++            }
+             // Lanes 1-2 packed into one u64 store, lanes 3-4 are `ext`
+             // verbatim (little-endian lane order, like the raw key load in
+             // `pack_pretoken_key`); the two u64 writes fuse into one 16 B
+@@ -1156,7 +1252,7 @@ impl Tokenizer {
+                 (p as *mut u64).write_unaligned(ab);
+                 (p.add(2) as *mut u64).write_unaligned(ext);
+             }
+-            w += if fast { (val & 0x7F) as usize } else { 0 };
++            w += len;
+             if !fast {
+                 // Cold: reconstruct the span from the entry. For key == 0
+                 // `h` is really the span length, but the slow path never
+@@ -1166,7 +1262,17 @@ impl Tokenizer {
+                 // SAFETY: entry `i` was written by this chunk's fill, so
+                 // `ptr` points at a live span of the input's lifetime.
+                 let bytes = unsafe { batch.span(i) };
+-                w = self.probe_emit_slow(bytes, key, h, out, w);
++                let before = w;
++                w = self.probe_emit_slow::<PROFILE_FIRST>(
++                    bytes,
++                    key,
++                    h,
++                    out,
++                    w,
++                    !first_recorded,
++                    first_ready,
++                );
++                first_recorded |= w != before;
+                 dst = out.as_mut_ptr();
+                 table = self.pretoken_cache.probe_view();
+             }
+@@ -1188,13 +1294,15 @@ impl Tokenizer {
+     /// (the span length when `key == 0`) without filtering it.
+     #[cold]
+     #[inline(never)]
+-    fn probe_emit_slow(
++    fn probe_emit_slow<const PROFILE_FIRST: bool>(
+         &mut self,
+         bytes: &[u8],
+         key: u128,
+         h: u64,
+         out: &mut Vec<u32>,
+         w: usize,
++        mark_first: bool,
++        first_ready: &mut impl FnMut(),
+     ) -> usize {
+         // SAFETY: elements below `w` are initialized and w <= capacity
+         // (emit-loop invariant); Vec append methods need len in sync.
+@@ -1207,6 +1315,9 @@ impl Tokenizer {
+                 Ok((val, ext)) => {
+                     let len = (val & 0x7F) as usize;
+                     if val & VAL_SPILL == 0 {
++                        if PROFILE_FIRST && mark_first && len != 0 {
++                            first_ready();
++                        }
+                         out.extend_from_slice(&unpack_val_lanes(val, ext)[..len]);
+                     } else {
+                         let start = (val >> 32) as usize;
+@@ -1214,10 +1325,21 @@ impl Tokenizer {
+                         // tokens at `start`; the arena never shrinks.
+                         let toks =
+                             unsafe { self.token_arena.get_unchecked(start..start + len) };
++                        if PROFILE_FIRST && mark_first && len != 0 {
++                            first_ready();
++                        }
+                         out.extend_from_slice(token_ids_as_u32s(toks));
+                     }
+                 }
+-                Err(slot) => self.encode_pretoken_miss(bytes, key, h, slot, out),
++                Err(slot) => self.encode_pretoken_miss::<PROFILE_FIRST>(
++                    bytes,
++                    key,
++                    h,
++                    slot,
++                    out,
++                    mark_first,
++                    first_ready,
++                ),
+             }
+         } else {
+             // Long pretokens (> 15 bytes, rare) always spill to the arena;
+@@ -1227,12 +1349,22 @@ impl Tokenizer {
+                 Some(&(offset, len)) => {
+                     let start = offset as usize;
+                     // SAFETY: as above.
+-                    let toks = unsafe {
+-                        self.token_arena.get_unchecked(start..start + len as usize)
+-                    };
++                    let toks =
++                        unsafe { self.token_arena.get_unchecked(start..start + len as usize) };
++                    if PROFILE_FIRST && mark_first && !toks.is_empty() {
++                        first_ready();
++                    }
+                     out.extend_from_slice(token_ids_as_u32s(toks));
+                 }
+-                None => self.encode_pretoken_miss(bytes, 0, 0, 0, out),
++                None => self.encode_pretoken_miss::<PROFILE_FIRST>(
++                    bytes,
++                    0,
++                    0,
++                    0,
++                    out,
++                    mark_first,
++                    first_ready,
++                ),
+             }
+         }
+         out.reserve(4 * PRETOKEN_CHUNK);
+@@ -1244,13 +1376,15 @@ impl Tokenizer {
+     /// running through the explicit-rank loops.
+     #[cold]
+     #[inline(never)]
+-    fn encode_pretoken_miss_ranked(
++    fn encode_pretoken_miss_ranked<const PROFILE_FIRST: bool>(
+         &mut self,
+         bytes: &[u8],
+         key: u128,
+         h: u64,
+         slot: usize,
+         out: &mut Vec<u32>,
++        mark_first: bool,
++        first_ready: &mut impl FnMut(),
+     ) {
+         let rm = self.ranked_merges.clone().expect("caller checked ranked_merges");
+         if key != 0 {
+@@ -1264,6 +1398,9 @@ impl Tokenizer {
+                 &mut buf,
+             );
+             let symbols = &buf[..n];
++            if PROFILE_FIRST && mark_first && !symbols.is_empty() {
++                first_ready();
++            }
+             let (val, ext) = Self::pack_val(symbols, &mut self.token_arena);
+             self.pretoken_cache.insert_at(slot, key, h, val, ext);
+             out.extend_from_slice(token_ids_as_u32s(symbols));
+@@ -1284,6 +1421,9 @@ impl Tokenizer {
+                 }
+                 bpe_merge_symbols_ranked(&rm, symbols);
+             }
++            if PROFILE_FIRST && mark_first && !symbols.is_empty() {
++                first_ready();
++            }
+             let len = symbols.len() as u32;
+             let offset = self.token_arena.len() as u32;
+             self.token_arena.extend_from_slice(symbols);
+@@ -1299,20 +1439,30 @@ impl Tokenizer {
+     /// `get_or_slot` probe (meaningful only when `key != 0`); nothing
+     /// here touches the short cache before the insert, so it stays valid.
+     #[inline(never)]
+-    fn encode_pretoken_miss(
++    fn encode_pretoken_miss<const PROFILE_FIRST: bool>(
+         &mut self,
+         bytes: &[u8],
+         key: u128,
+         h: u64,
+         slot: usize,
+         out: &mut Vec<u32>,
++        mark_first: bool,
++        first_ready: &mut impl FnMut(),
+     ) {
+         // Rank-mapped vocabularies take the outlined
+         // ranked miss path; the branch is one perfectly-predicted test for
+         // everything else, keeping this function's codegen identical to a
+         // build without ranked support.
+         if self.ranked_merges.is_some() {
+-            return self.encode_pretoken_miss_ranked(bytes, key, h, slot, out);
++            return self.encode_pretoken_miss_ranked::<PROFILE_FIRST>(
++                bytes,
++                key,
++                h,
++                slot,
++                out,
++                mark_first,
++                first_ready,
++            );
+         }
+         if key != 0 {
+             // Short pretoken (≤ 15 bytes, the overwhelming majority of
+@@ -1335,6 +1485,9 @@ impl Tokenizer {
+                 &mut buf,
+             );
+             let symbols = &buf[..n];
++            if PROFILE_FIRST && mark_first && !symbols.is_empty() {
++                first_ready();
++            }
+             let (val, ext) = Self::pack_val(symbols, &mut self.token_arena);
+             self.pretoken_cache.insert_at(slot, key, h, val, ext);
+             out.extend_from_slice(token_ids_as_u32s(symbols));
+@@ -1375,6 +1528,9 @@ impl Tokenizer {
+                     ),
+                 }
+             }
++            if PROFILE_FIRST && mark_first && !symbols.is_empty() {
++                first_ready();
++            }
+             let len = symbols.len() as u32;
+             let offset = self.token_arena.len() as u32;
+             self.token_arena.extend_from_slice(symbols);
+@@ -1681,7 +1837,7 @@ mod tests {
+                 let (base64_token, id_str) = line.split_once(' ').unwrap();
+                 let id = id_str.trim().parse::<u32>().unwrap();
+                 assert!(id == i as u32);
+-                
++
+                 BASE64_STANDARD.decode(base64_token).unwrap()
+             })
+             .collect();
+diff --git a/src/lib.rs b/src/lib.rs
+index 61a046d..4f8f6f4 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -15,8 +15,8 @@ pub use crate::bpe::sentencepiece::EncodeState;
+ pub mod load_tokenizer;
+ 
+ use crate::batch::{
+-    encode_files_docs, encode_files_docs_serial, encode_into, sp_encode_docs_ragged_serial,
+-    sp_encode_files_docs, sp_encode_files_docs_serial,
++    encode_files_docs, encode_files_docs_serial, encode_files_docs_serial_profiled, encode_into,
++    sp_encode_docs_ragged_serial, sp_encode_files_docs, sp_encode_files_docs_serial,
+ };
+ use crate::bindings::bridge::{
+     EncodeInput, encode_batch_pylist, encode_batch_ragged, extract_doc, extract_token_ids,
+@@ -29,7 +29,7 @@ use crate::bindings::pretokenize::{
+ };
+ use crate::bindings::sources::{
+     BytesSource, FileSource, JsonlFileSource, ParquetFileSource, TextFileSource,
+-    encode_files_ragged,
++    encode_files_ragged, encode_files_ragged_profiled,
+ };
+ use crate::bindings::train::train_bpe;
+ use crate::input::file_source::DocFormat;
+@@ -39,6 +39,7 @@ use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
+ use pyo3::types::{PyBytes, PyDict, PyList};
+ use std::collections::HashMap;
+ use std::path::PathBuf;
++use std::time::Instant;
+ 
+ #[pyclass]
+ struct BPETokenizer {
+@@ -108,6 +109,31 @@ impl BPETokenizer {
+         Ok(ids.into_pyarray(py))
+     }
+ 
++    /// Timing includes time from encoding function invocation to first token
++    /// output.
++    fn encode_profiled<'py>(
++        &mut self,
++        py: Python<'py>,
++        input: Bound<'py, PyAny>,
++    ) -> PyResult<(Bound<'py, PyArray1<u32>>, Bound<'py, PyDict>)> {
++        let started = Instant::now();
++        let input = extract_doc(&input)?;
++        let mut ids = Vec::new();
++        let mut ttft = None;
++        let mut mark_first_ready = || ttft = Some(started.elapsed());
++        self.tokenizer.encode_with_added_tokens_flat_profiled(
++            input.as_bytes(),
++            &mut ids,
++            &mut mark_first_ready,
++        );
++        let elapsed = started.elapsed();
++        let profile = PyDict::new(py);
++        profile.set_item("total_tokens", ids.len())?;
++        profile.set_item("ttft_seconds", ttft.map(|duration| duration.as_secs_f64()))?;
++        profile.set_item("elapsed_seconds", elapsed.as_secs_f64())?;
++        Ok((ids.into_pyarray(py), profile))
++    }
++
+     /// Encode a batch of documents in parallel with rayon, releasing the GIL.
+     /// Takes a list of str or a list of bytes (all elements of the same
+     /// type), an awkward Array of strings/bytestrings — whose flat buffers
+@@ -226,6 +252,38 @@ impl BPETokenizer {
+         })
+     }
+ 
++    /// Timing includes time from encoding function invocation to first token
++    /// output.
++    #[pyo3(signature = (source, *, parallel = false))]
++    fn encode_files_profiled<'py>(
++        &self,
++        py: Python<'py>,
++        source: Bound<'py, PyAny>,
++        parallel: bool,
++    ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyDict>)> {
++        if parallel {
++            return Err(pyo3::exceptions::PyValueError::new_err(
++                "encode_files_profiled only supports parallel=False",
++            ));
++        }
++        let started = Instant::now();
++        let (tokens, total_tokens, ttft, elapsed) =
++            encode_files_ragged_profiled(py, &source, started, |files, format, started| {
++                encode_files_docs_serial_profiled(
++                    &self.workers,
++                    &self.tokenizer,
++                    files,
++                    format,
++                    started,
++                )
++            })?;
++        let profile = PyDict::new(py);
++        profile.set_item("total_tokens", total_tokens)?;
++        profile.set_item("ttft_seconds", ttft.map(|duration| duration.as_secs_f64()))?;
++        profile.set_item("elapsed_seconds", elapsed.as_secs_f64())?;
++        Ok((tokens, profile))
++    }
++
+     /// Size of the vocabulary: one greater than the largest token ID,
+     /// including added tokens.
+     #[getter]
+diff --git a/tests/test_encode.py b/tests/test_encode.py
+index 1941522..d63e0aa 100644
+--- a/tests/test_encode.py
++++ b/tests/test_encode.py
+@@ -21,6 +21,29 @@ def test_use_gigatoken_model(gigatoken_r50k):
+     print(gigatoken_r50k.encode(b"Here's a test string"))
+ 
+ 
++@pytest.mark.parametrize(
++    "text",
++    [
++        "profilingcoldmisslongpretoken",
++        b"profiling bytes",
++        "<|endoftext|>",
++        "",
++    ],
++)
++def test_encode_profiled_matches_encode(gpt2_tokenizer_path, text):
++    expected = BPETokenizer.from_hf(gpt2_tokenizer_path).encode(text)
++    actual, profile = BPETokenizer.from_hf(gpt2_tokenizer_path).encode_profiled(text)
++
++    assert np.array_equal(actual, expected)
++    assert set(profile) == {"total_tokens", "ttft_seconds", "elapsed_seconds"}
++    assert profile["total_tokens"] == len(actual)
++    assert profile["elapsed_seconds"] >= 0
++    if actual.size:
++        assert 0 <= profile["ttft_seconds"] <= profile["elapsed_seconds"]
++    else:
++        assert profile["ttft_seconds"] is None
++
++
+ def test_decode_int64_array_matches_list(gigatoken_r50k):
+     # int64 arrays (e.g. model outputs) take the one-pass checked-cast path;
+     # the result must match plain list decoding.
+diff --git a/tests/test_encode_files.py b/tests/test_encode_files.py
+index 0841642..2404506 100644
+--- a/tests/test_encode_files.py
++++ b/tests/test_encode_files.py
+@@ -257,6 +257,73 @@ def test_empty_text_file(tok, tmp_path):
+     assert got[0].tolist() == []
+ 
+ 
++def test_encode_files_profiled_matches_serial(tok, expected, tmp_path):
++    path = tmp_path / "docs.jsonl"
++    with path.open("w") as f:
++        for doc in DOCS:
++            f.write(json.dumps({"text": doc}) + "\n")
++
++    got, profile = tok.encode_files_profiled(JsonlFileSource([path]))
++    assert _ids(got) == expected
++    assert profile["total_tokens"] == sum(map(len, expected))
++    assert 0 <= profile["ttft_seconds"] <= profile["elapsed_seconds"]
++
++
++def test_encode_files_profiled_empty(tok, tmp_path):
++    path = tmp_path / "empty.txt"
++    path.write_text("")
++
++    got, profile = tok.encode_files_profiled(path)
++    assert got.tolist() == [[]]
++    assert profile["total_tokens"] == 0
++    assert profile["ttft_seconds"] is None
++    assert profile["elapsed_seconds"] >= 0
++
++
++def test_encode_files_profiled_added_token(gpt2_tokenizer_path, tmp_path):
++    tok = BPETokenizer.from_hf(gpt2_tokenizer_path)
++    path = tmp_path / "added.txt"
++    path.write_text("<|endoftext|>")
++
++    got, profile = tok.encode_files_profiled(path)
++    assert got.tolist() == [tok.encode("<|endoftext|>").tolist()]
++    assert profile["total_tokens"] == 1
++    assert 0 <= profile["ttft_seconds"] <= profile["elapsed_seconds"]
++
++
++def test_encode_files_profiled_cold_long_pretoken(gpt2_tokenizer_path, tmp_path):
++    tok = BPETokenizer.from_hf(gpt2_tokenizer_path)
++    path = tmp_path / "cold.txt"
++    text = "profilingcoldmisslongpretoken"
++    path.write_text(text)
++
++    got, profile = tok.encode_files_profiled(path)
++    reference = BPETokenizer.from_hf(gpt2_tokenizer_path).encode(text).tolist()
++    assert got.tolist() == [reference]
++    assert profile["total_tokens"] == len(got[0])
++    assert 0 <= profile["ttft_seconds"] <= profile["elapsed_seconds"]
++
++
++def test_encode_files_profiled_skips_empty_documents(gpt2_tokenizer_path, tmp_path):
++    tok = BPETokenizer.from_hf(gpt2_tokenizer_path)
++    empty = tmp_path / "empty-first.txt"
++    nonempty = tmp_path / "nonempty-second.txt"
++    empty.write_text("")
++    nonempty.write_text("hello")
++
++    got, profile = tok.encode_files_profiled([empty, nonempty])
++    assert got.tolist() == [[], [31373]]
++    assert profile["total_tokens"] == 1
++    assert 0 <= profile["ttft_seconds"] <= profile["elapsed_seconds"]
++
++
++def test_encode_files_profiled_rejects_parallel(tok, tmp_path):
++    path = tmp_path / "doc.txt"
++    path.write_text("hello")
++    with pytest.raises(ValueError, match="parallel=False"):
++        tok.encode_files_profiled(path, parallel=True)
++
++
+ def test_missing_file_raises(tok, tmp_path):
+     with pytest.raises(OSError, match="nope.txt"):
+         tok.encode_files([tmp_path / "nope.txt"])

@@ -1,0 +1,41 @@
+name: Setup and dependencies
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Rust toolchains
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup toolchain install nightly --profile minimal
+          cargo --version
+          rustc --version
+      - name: Install documented Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[benchmark,test]" --config-settings=build-args=--locked
+          python -m pip check
+      - name: Build and test Hiriluk
+        run: |
+          cargo build --release --locked
+          cargo test --locked --lib
+          python -m pytest python/tests
+      - name: Build and probe instrumented references
+        run: python tools/setup_ttft_repos.py --root "$RUNNER_TEMP/ttft-repos"

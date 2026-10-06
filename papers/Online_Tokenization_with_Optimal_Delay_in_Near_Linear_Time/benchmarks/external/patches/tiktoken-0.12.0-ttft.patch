@@ -1,0 +1,256 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index 5e89bfd..d6448d5 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -3,6 +3,7 @@ use std::borrow::Cow;
+ use std::collections::HashSet;
+ use std::num::NonZeroU64;
+ use std::thread;
++use std::time::{Duration, Instant};
+ 
+ use fancy_regex::Regex;
+ #[cfg(feature = "python")]
+@@ -199,6 +200,32 @@ pub struct CoreBPE {
+     sorted_token_bytes: Vec<Vec<u8>>,
+ }
+ 
++pub struct EncodeProfile {
++    pub total_tokens: usize,
++    pub ttft: Option<Duration>,
++    pub elapsed: Duration,
++}
++
++struct EncodeProfiler {
++    started: Instant,
++    ttft: Option<Duration>,
++}
++
++impl EncodeProfiler {
++    fn new() -> Self {
++        Self {
++            started: Instant::now(),
++            ttft: None,
++        }
++    }
++
++    fn record_first_token(&mut self) {
++        if self.ttft.is_none() {
++            self.ttft = Some(self.started.elapsed());
++        }
++    }
++}
++
+ impl CoreBPE {
+     fn _get_tl_regex(&self) -> &Regex {
+         // See performance notes above for what this is about
+@@ -248,6 +275,31 @@ impl CoreBPE {
+         &self,
+         text: &str,
+         allowed_special: &HashSet<&str>,
++    ) -> Result<(Vec<Rank>, usize), EncodeError> {
++        self.encode_native::<false>(text, allowed_special, None)
++    }
++
++    pub fn encode_profiled(
++        &self,
++        text: &str,
++        allowed_special: &HashSet<&str>,
++    ) -> Result<(Vec<Rank>, usize, EncodeProfile), EncodeError> {
++        let mut profiler = EncodeProfiler::new();
++        let (tokens, last_piece_token_len) =
++            self.encode_native::<true>(text, allowed_special, Some(&mut profiler))?;
++        let profile = EncodeProfile {
++            total_tokens: tokens.len(),
++            ttft: profiler.ttft,
++            elapsed: profiler.started.elapsed(),
++        };
++        Ok((tokens, last_piece_token_len, profile))
++    }
++
++    fn encode_native<const PROFILE: bool>(
++        &self,
++        text: &str,
++        allowed_special: &HashSet<&str>,
++        mut profiler: Option<&mut EncodeProfiler>,
+     ) -> Result<(Vec<Rank>, usize), EncodeError> {
+         let special_regex = self._get_tl_special_regex();
+         let regex = self._get_tl_regex();
+@@ -288,11 +340,22 @@ impl CoreBPE {
+                 if let Some(token) = self.encoder.get(piece) {
+                     last_piece_token_len = 1;
+                     ret.push(*token);
++                    if PROFILE {
++                        profiler.as_deref_mut().unwrap().record_first_token();
++                    }
+                     continue;
+                 }
+                 let tokens = byte_pair_encode(piece, &self.encoder);
+                 last_piece_token_len = tokens.len();
+-                ret.extend(&tokens);
++                if PROFILE && ret.is_empty() {
++                    if let Some((first, rest)) = tokens.split_first() {
++                        ret.push(*first);
++                        profiler.as_deref_mut().unwrap().record_first_token();
++                        ret.extend(rest);
++                    }
++                } else {
++                    ret.extend(&tokens);
++                }
+             }
+ 
+             match next_special {
+@@ -301,6 +364,9 @@ impl CoreBPE {
+                     let piece = m.as_str();
+                     let token = self.special_tokens_encoder[piece];
+                     ret.push(token);
++                    if PROFILE {
++                        profiler.as_deref_mut().unwrap().record_first_token();
++                    }
+                     start = m.end();
+                     last_piece_token_len = 0;
+                 }
+diff --git a/src/py.rs b/src/py.rs
+index 60b6245..6b6a3a5 100644
+--- a/src/py.rs
++++ b/src/py.rs
+@@ -69,6 +69,32 @@ impl CoreBPE {
+         buffer.into_py_any(py)
+     }
+ 
++    fn encode_to_tiktoken_buffer_profiled(
++        &self,
++        py: Python,
++        text: &str,
++        allowed_special: HashSet<PyBackedStr>,
++    ) -> PyResult<(Py<PyAny>, usize, Option<f64>, f64)> {
++        let tokens_res = py.detach(|| {
++            let allowed_special: HashSet<&str> =
++                allowed_special.iter().map(|s| s.as_ref()).collect();
++            self.encode_profiled(text, &allowed_special)
++        });
++
++        let (tokens, _, profile) = match tokens_res {
++            Ok(result) => result,
++            Err(e) => return Err(PyErr::new::<exceptions::PyValueError, _>(e.message)),
++        };
++
++        let buffer = TiktokenBuffer { tokens }.into_py_any(py)?;
++        Ok((
++            buffer,
++            profile.total_tokens,
++            profile.ttft.map(|value| value.as_secs_f64()),
++            profile.elapsed.as_secs_f64(),
++        ))
++    }
++
+     fn _encode_bytes(&self, py: Python, bytes: &[u8]) -> Vec<Rank> {
+         py.detach(|| {
+             match std::str::from_utf8(bytes) {
+diff --git a/tests/test_encoding.py b/tests/test_encoding.py
+index 0574e35..6d95bd1 100644
+--- a/tests/test_encoding.py
++++ b/tests/test_encoding.py
+@@ -82,6 +82,30 @@ def test_encode_empty():
+     assert enc.encode("") == []
+ 
+ 
++@pytest.mark.parametrize(
++    ("text", "allowed_special"),
++    [
++        ("", set()),
++        ("hello world", set()),
++        ("z" * 64, set()),
++        ("<|endoftext|>", "all"),
++    ],
++)
++def test_encode_to_numpy_profiled(text, allowed_special):
++    enc = tiktoken.get_encoding("r50k_base")
++    expected = enc.encode_to_numpy(text, allowed_special=allowed_special)
++    tokens, profile = enc.encode_to_numpy_profiled(text, allowed_special=allowed_special)
++
++    assert tokens.tolist() == expected.tolist()
++    assert profile.total_tokens == len(tokens)
++    assert profile.elapsed_seconds >= 0
++    if tokens.size:
++        assert profile.ttft_seconds is not None
++        assert 0 <= profile.ttft_seconds <= profile.elapsed_seconds
++    else:
++        assert profile.ttft_seconds is None
++
++
+ def test_encode_bytes():
+     enc = tiktoken.get_encoding("cl100k_base")
+     assert enc._encode_bytes(b" \xec\x8b\xa4\xed") == [62085]
+diff --git a/tiktoken/__init__.py b/tiktoken/__init__.py
+index f90afc7..0ecbd7b 100644
+--- a/tiktoken/__init__.py
++++ b/tiktoken/__init__.py
+@@ -1,5 +1,6 @@
+ # This is the public API of tiktoken
+ from .core import Encoding as Encoding
++from .core import EncodeProfile as EncodeProfile
+ from .model import encoding_for_model as encoding_for_model
+ from .model import encoding_name_for_model as encoding_name_for_model
+ from .registry import get_encoding as get_encoding
+diff --git a/tiktoken/core.py b/tiktoken/core.py
+index 225fffb..6849aad 100644
+--- a/tiktoken/core.py
++++ b/tiktoken/core.py
+@@ -2,7 +2,7 @@ from __future__ import annotations
+ 
+ import functools
+ from concurrent.futures import ThreadPoolExecutor
+-from typing import TYPE_CHECKING, AbstractSet, Collection, Literal, NoReturn, Sequence
++from typing import TYPE_CHECKING, AbstractSet, Collection, Literal, NamedTuple, NoReturn, Sequence
+ 
+ from tiktoken import _tiktoken
+ 
+@@ -13,6 +13,12 @@ if TYPE_CHECKING:
+     import numpy.typing as npt
+ 
+ 
++class EncodeProfile(NamedTuple):
++    total_tokens: int
++    ttft_seconds: float | None
++    elapsed_seconds: float
++
++
+ class Encoding:
+     def __init__(
+         self,
+@@ -158,6 +164,35 @@ class Encoding:
+         buffer = self._core_bpe.encode_to_tiktoken_buffer(text, allowed_special)
+         return np.frombuffer(buffer, dtype=np.uint32)
+ 
++    def encode_to_numpy_profiled(
++        self,
++        text: str,
++        *,
++        allowed_special: Literal["all"] | AbstractSet[str] = set(),  # noqa: B006
++        disallowed_special: Literal["all"] | Collection[str] = "all",
++    ) -> tuple[npt.NDArray[np.uint32], EncodeProfile]:
++        """Encodes to a NumPy array and reports native first-token timing."""
++        if allowed_special == "all":
++            allowed_special = self.special_tokens_set
++        if disallowed_special == "all":
++            disallowed_special = self.special_tokens_set - allowed_special
++        if disallowed_special:
++            if not isinstance(disallowed_special, frozenset):
++                disallowed_special = frozenset(disallowed_special)
++            if match := _special_token_regex(disallowed_special).search(text):
++                raise_disallowed_special_token(match.group())
++
++        import numpy as np
++
++        buffer, total_tokens, ttft_seconds, elapsed_seconds = (
++            self._core_bpe.encode_to_tiktoken_buffer_profiled(text, allowed_special)
++        )
++        return np.frombuffer(buffer, dtype=np.uint32), EncodeProfile(
++            total_tokens=total_tokens,
++            ttft_seconds=ttft_seconds,
++            elapsed_seconds=elapsed_seconds,
++        )
++
+     def encode_ordinary_batch(self, text: list[str], *, num_threads: int = 8) -> list[list[int]]:
+         """Encodes a list of strings into tokens, in parallel, ignoring special tokens.
+ 
