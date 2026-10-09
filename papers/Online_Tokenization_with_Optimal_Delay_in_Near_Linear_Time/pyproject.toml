@@ -1,0 +1,54 @@
+[build-system]
+requires = ["maturin>=1.9.4,<2"]
+build-backend = "maturin"
+
+[project]
+name = "hiriluk"
+dynamic = ["version"]
+description = "Fast, streaming BPE tokenization"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE-APACHE", "THIRD_PARTY_NOTICES.md"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Typing :: Typed",
+]
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "tiktoken>=0.12"]
+benchmark = [
+    "awkward>=2",
+    "gigatoken==0.10.0",
+    "maturin>=1.9.4,<2",
+    "tiktoken>=0.12",
+    "tokenizers>=0.20",
+    "pyarrow>=15",
+    "huggingface-hub>=0.20",
+    "matplotlib>=3.8",
+]
+
+[tool.maturin]
+manifest-path = "bindings/python/Cargo.toml"
+python-source = "python"
+module-name = "hiriluk._hiriluk"
+bindings = "pyo3"
+strip = true
+include = [
+    { path = "THIRD_PARTY_NOTICES.md", format = "sdist" },
+    { path = "THIRD_PARTY_NOTICES.md", format = "wheel" },
+    { path = "tools/**/*", format = "sdist" },
+    { path = "benchmarks/**/*", format = "sdist" },
+    { path = "paths.env", format = "sdist" },
+]
+exclude = [
+    "tools/**/__pycache__/**",
+    "tools/**/*.pyc",
+    "benchmarks/**/__pycache__/**",
+    "benchmarks/**/*.pyc",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

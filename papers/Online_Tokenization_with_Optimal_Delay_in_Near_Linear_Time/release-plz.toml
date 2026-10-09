@@ -1,0 +1,3 @@
+[workspace]
+dependencies_update = true
+changelog_update = false

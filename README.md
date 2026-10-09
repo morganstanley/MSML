@@ -23,6 +23,7 @@ See also: https://www.morganstanley.com/about-us/technology/machine-learning-res
 
 | Year | Venue | Title | Code |
 | ---- | ----- | ----- | ---- |
+| 2026 | arXiv | Online Tokenization with Optimal Delay in Near Linear Time | [code](papers/Online_Tokenization_with_Optimal_Delay_in_Near_Linear_Time) |
 | 2026 | ACL Findings | [AHA: Aligning Large Audio-Language Models for Reasoning Hallucinations via Counterfactual Hard Negatives](https://arxiv.org/abs/2512.24052) | [code](papers/AHA_Aligning_Large_Audio_Language_Models_for_Reasoning_Hallucinations_via_Counterfactual_Hard_Negatives) |
 | 2026 | COLM Workshop | [AriadneMem: Threading the Maze of Lifelong Memory for LLM Agents](https://arxiv.org/abs/2603.03290) | [code](papers/AriadneMem_Threading_the_Maze_of_Lifelong_Memory_for_LLM_Agents) |
 | 2026 | COLM Workshop | [Context Pruning for Coding Agents via Multi-Rubric Latent Reasoning](https://arxiv.org/abs/2605.15315) | [code](papers/Context_Pruning_for_Coding_Agents_via_Latent_Multi_Rubric_Reasoning) |
