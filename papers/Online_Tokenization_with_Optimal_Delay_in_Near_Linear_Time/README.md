@@ -75,10 +75,11 @@ python -m pytest python/tests
 
 ## 3. Running benchmarks
 
-Throughput and TTFT experiments test every model/encoding against GitHub, 
-English, and Chinese by default. Add `--tiny` for quick approximately 16
-MiB runs, or selectors such as `--encoding r50k --dataset english` and
-`--model gpt2 --dataset github`.
+The built-in throughput and TTFT runners test every model/encoding against
+GitHub, English, and Chinese by default. Add `--tiny` for quick approximately
+16 MiB runs, or selectors such as `--encoding r50k --dataset english` and
+`--model gpt2 --dataset github`. The external TTFT runners use `INPUT` instead
+of these command-line selectors.
 
 Run time-to-first-token experiments. The first command measures Hiriluk;
 the external commands measure the patched reference implementations. The
@@ -94,9 +95,15 @@ python benchmarks/external/gigatoken_ttft_bench.py
 
 # Example shorter external run configuration:
 WARMUP=1 REPS=3 python benchmarks/external/gigatoken_ttft_bench.py
+
+# External TTFT on a single corpus (adjust the path to your DATA_DIR):
+INPUT="$HOME/Documents/data/english/parquet_0_stream_tiny.txt" \
+python benchmarks/external/tiktoken_ttft_bench.py
+INPUT="$HOME/Documents/data/english/parquet_0_stream_tiny.txt" \
+python benchmarks/external/gigatoken_ttft_bench.py
 ```
 
-Run RSS experiments. 
+Run RSS experiments.
 
 ```bash
 python benchmarks/tiktoken_rss_bench.py --dfa
